@@ -12,7 +12,7 @@ import (
 
 // answer builds a minimal A response for name with the given TTL, which is
 // enough for the cache to consider it storable.
-func answer(t *testing.T, name string, ttl uint32) []byte {
+func persistAnswer(t *testing.T, name string, ttl uint32) []byte {
 	t.Helper()
 	enc, err := dnsmsg.EncodeName(name)
 	if err != nil {
@@ -40,8 +40,8 @@ func TestCacheSaveLoadRoundTrip(t *testing.T) {
 	path := filepath.Join(dir, "cache.bin")
 
 	src := NewCache(100, time.Second, time.Hour)
-	src.Put(CacheKey("example.com", 1), answer(t, "example.com", 300))
-	src.Put(CacheKey("example.org", 1), answer(t, "example.org", 300))
+	src.Put(CacheKey("example.com", 1), persistAnswer(t, "example.com", 300))
+	src.Put(CacheKey("example.org", 1), persistAnswer(t, "example.org", 300))
 	if err := src.Save(path); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestCacheLoadDropsExpired(t *testing.T) {
 
 	c := NewCache(10, time.Second, time.Hour)
 	key := CacheKey("gone.example", 1)
-	c.PutUntil(key, answer(t, "gone.example", 300), time.Now().Add(-time.Minute))
+	c.PutUntil(key, persistAnswer(t, "gone.example", 300), time.Now().Add(-time.Minute))
 	if err := c.Save(path); err != nil {
 		t.Fatalf("save: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCacheLoadRejectsGarbage(t *testing.T) {
 
 	// A truncated but otherwise valid file must not panic.
 	good := NewCache(10, time.Second, time.Hour)
-	good.Put(CacheKey("example.com", 1), answer(t, "example.com", 300))
+	good.Put(CacheKey("example.com", 1), persistAnswer(t, "example.com", 300))
 	if err := good.Save(path); err != nil {
 		t.Fatal(err)
 	}
@@ -124,7 +124,7 @@ func TestPutUntilKeepsExpiry(t *testing.T) {
 	c := NewCache(10, time.Second, time.Hour)
 	key := CacheKey("example.com", 1)
 	want := time.Now().Add(42 * time.Second).Truncate(time.Millisecond)
-	c.PutUntil(key, answer(t, "example.com", 300), want)
+	c.PutUntil(key, persistAnswer(t, "example.com", 300), want)
 
 	keys := c.ExpiringSoon(time.Minute, 0, 10)
 	if len(keys) != 1 || keys[0] != key {
@@ -143,7 +143,7 @@ func TestPutUntilKeepsExpiry(t *testing.T) {
 func TestExpiringSoonRespectsHits(t *testing.T) {
 	c := NewCache(10, time.Second, time.Hour)
 	key := CacheKey("example.com", 1)
-	c.PutUntil(key, answer(t, "example.com", 300), time.Now().Add(10*time.Second))
+	c.PutUntil(key, persistAnswer(t, "example.com", 300), time.Now().Add(10*time.Second))
 
 	if got := c.ExpiringSoon(time.Minute, 3, 10); len(got) != 0 {
 		t.Fatalf("unpopular entry queued for prefetch: %v", got)
