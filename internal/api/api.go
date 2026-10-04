@@ -18,7 +18,10 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/devices"
+	"github.com/ahardkore/adblockerpro/internal/dhcp"
 	"github.com/ahardkore/adblockerpro/internal/dnsmsg"
+	"github.com/ahardkore/adblockerpro/internal/history"
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/resolver"
 	"github.com/ahardkore/adblockerpro/internal/server"
 	"github.com/ahardkore/adblockerpro/internal/stats"
@@ -38,7 +41,13 @@ type Deps struct {
 	Devices *devices.Registry
 	Stats   *stats.Collector
 	DNS     *server.DNS
-	Log     *slog.Logger
+	// History is the long-term query store (nil when disabled).
+	History *history.Store
+	// Schedules holds the time-based filtering windows.
+	Schedules *schedule.Engine
+	// DHCP is the optional DHCPv4 server (nil when not built in).
+	DHCP *dhcp.Server
+	Log  *slog.Logger
 	// Reload re-applies configuration to the running resolver.
 	Reload func(*config.Config) error
 }
@@ -62,8 +71,22 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("/api/login", s.handleLogin)
 
+	// DNS-over-HTTPS is authenticated by nothing on purpose: it is a
+	// resolver endpoint, protected by the same client checks as UDP DNS.
+	s.mux.HandleFunc("/dns-query", s.handleDoH)
+	s.mux.HandleFunc("/metrics", s.handleMetrics)
+
 	api := map[string]http.HandlerFunc{
-		"/api/summary":      s.handleSummary,
+		"/api/summary":          s.handleSummary,
+		"/api/history":          s.handleHistory,
+		"/api/history/daily":    s.handleHistoryDaily,
+		"/api/history/export":   s.handleHistoryExport,
+		"/api/schedules":        s.handleSchedules,
+		"/api/dhcp":             s.handleDHCP,
+		"/api/dhcp/reservation": s.handleDHCPReservation,
+		"/api/devices/suggest":  s.handleDevicesSuggest,
+		"/api/backup":           s.handleBackup,
+		"/api/restore":          s.handleRestore,
 		"/api/queries":      s.handleQueries,
 		"/api/lists":        s.handleLists,
 		"/api/lists/update": s.handleListsUpdate,
@@ -233,6 +256,12 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 			"sources":     len(s.Updater.Sources()),
 			"last_update": s.Updater.LastRun(),
 		},
+		"schedules": map[string]any{
+			"count":  len(s.Schedules.All()),
+			"active": s.Schedules.Active("", time.Now()),
+		},
+		"dhcp":    s.dhcpSummary(),
+		"history": s.historySummary(),
 		"status": map[string]any{
 			"version":      Version,
 			"uptime_s":     int(s.DNS.Uptime().Seconds()),
@@ -243,6 +272,31 @@ func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {
 		},
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (s *Server) dhcpSummary() map[string]any {
+	if s.DHCP == nil {
+		return map[string]any{"enabled": false, "leases": 0}
+	}
+	active := 0
+	for _, l := range s.DHCP.Leases() {
+		if l.Active() {
+			active++
+		}
+	}
+	return map[string]any{"enabled": s.DHCP.Enabled(), "leases": active}
+}
+
+func (s *Server) historySummary() map[string]any {
+	if s.History == nil {
+		return map[string]any{"enabled": false}
+	}
+	return map[string]any{
+		"enabled": true,
+		"days":    len(s.History.Days()),
+		"bytes":   s.History.DiskUsage(),
+		"writes":  s.History.Writes(),
+	}
 }
 
 func (s *Server) handleQueries(w http.ResponseWriter, r *http.Request) {

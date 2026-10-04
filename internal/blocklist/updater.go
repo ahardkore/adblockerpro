@@ -22,6 +22,10 @@ type Source struct {
 	Title   string `json:"title"`
 	URL     string `json:"url"`
 	Enabled bool   `json:"enabled"`
+	// Kind is "block" (default) or "allow". An allow list overrides the
+	// blocklists, the way Pi-hole v6's subscribed allowlists do — handy for
+	// "do not break my smart TV" lists.
+	Kind string `json:"kind,omitempty"`
 
 	// Populated by the updater.
 	Domains     int       `json:"domains"`
@@ -114,13 +118,25 @@ func (u *Updater) Sources() []Source {
 	return append([]Source(nil), u.sources...)
 }
 
+// IsAllow reports whether this is a subscribed allowlist.
+func (s Source) IsAllow() bool { return strings.EqualFold(s.Kind, "allow") }
+
 // AddSource adds a list (or re-enables it if the URL is already present).
 func (u *Updater) AddSource(title, url string) Source {
+	return u.AddSourceKind(title, url, "block")
+}
+
+// AddSourceKind adds a list of the given kind ("block" or "allow").
+func (u *Updater) AddSourceKind(title, url, kind string) Source {
+	if kind == "" {
+		kind = "block"
+	}
 	u.mu.Lock()
 	id := SourceID(url)
 	for i := range u.sources {
 		if u.sources[i].ID == id {
 			u.sources[i].Enabled = true
+			u.sources[i].Kind = kind
 			if title != "" {
 				u.sources[i].Title = title
 			}
@@ -132,7 +148,7 @@ func (u *Updater) AddSource(title, url string) Source {
 	if title == "" {
 		title = url
 	}
-	s := Source{ID: id, Title: title, URL: url, Enabled: true}
+	s := Source{ID: id, Title: title, URL: url, Enabled: true, Kind: kind}
 	u.sources = append(u.sources, s)
 	u.mu.Unlock()
 	return s
@@ -181,6 +197,7 @@ func (u *Updater) cachePath(id string) string {
 func (u *Updater) LoadFromCache() int {
 	sources := u.Sources()
 	merged := make(map[string]string, 1<<16)
+	allow := make(map[string]string, 1024)
 	for _, s := range sources {
 		if !s.Enabled {
 			continue
@@ -191,13 +208,18 @@ func (u *Updater) LoadFromCache() int {
 		}
 		domains := ParseList(f)
 		f.Close()
+		target := merged
+		if s.IsAllow() {
+			target = allow
+		}
 		for _, d := range domains {
-			if _, exists := merged[d]; !exists {
-				merged[d] = s.Title
+			if _, exists := target[d]; !exists {
+				target[d] = s.Title
 			}
 		}
 	}
 	u.engine.SetDomains(NewDomainSet(merged))
+	u.engine.SetAllowDomains(NewDomainSet(allow))
 	return len(merged)
 }
 
@@ -250,6 +272,7 @@ func (u *Updater) UpdateAll(ctx context.Context) (int, error) {
 	close(results)
 
 	merged := make(map[string]string, 1<<17)
+	allow := make(map[string]string, 1024)
 	now := time.Now()
 	for r := range results {
 		s := &sources[r.idx]
@@ -267,14 +290,19 @@ func (u *Updater) UpdateAll(ctx context.Context) (int, error) {
 			s.Bytes = r.bytes
 		}
 		s.Domains = len(r.domains)
+		target := merged
+		if s.IsAllow() {
+			target = allow
+		}
 		for _, d := range r.domains {
-			if _, exists := merged[d]; !exists {
-				merged[d] = s.Title
+			if _, exists := target[d]; !exists {
+				target[d] = s.Title
 			}
 		}
 	}
 
 	u.engine.SetDomains(NewDomainSet(merged))
+	u.engine.SetAllowDomains(NewDomainSet(allow))
 
 	u.mu.Lock()
 	// Preserve any sources added while the update was running.

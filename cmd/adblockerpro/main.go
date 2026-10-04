@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -20,7 +21,10 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/devices"
+	"github.com/ahardkore/adblockerpro/internal/dhcp"
+	"github.com/ahardkore/adblockerpro/internal/history"
 	"github.com/ahardkore/adblockerpro/internal/resolver"
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/server"
 	"github.com/ahardkore/adblockerpro/internal/stats"
 )
@@ -125,28 +129,70 @@ func main() {
 		}
 	}
 
+	// Long-term query history (Pi-hole keeps this in SQLite; we use
+	// append-only daily shards and feed them from the stats collector).
+	var hist *history.Store
+	if cfg.History.Enabled {
+		h, err := history.Open(filepath.Join(cfg.DataDir, "history"), cfg.History.RetentionDays)
+		if err != nil {
+			log.Warn("history disabled", "err", err)
+		} else {
+			hist = h
+			collector.SetSink(func(e stats.Entry) {
+				if err := hist.Append(e); err != nil {
+					log.Debug("history append", "err", err)
+				}
+			})
+			log.Info("query history enabled",
+				"dir", filepath.Join(cfg.DataDir, "history"),
+				"retention_days", cfg.History.RetentionDays)
+		}
+	}
+
+	schedules := schedule.New()
+	schedules.Set(cfg.Schedules)
+
 	dnsSrv := server.NewDNS(cfg, server.Deps{
-		Engine:  engine,
-		Cache:   cache,
-		Pool:    pool,
-		Devices: registry,
-		Stats:   collector,
-		Log:     log,
+		Engine:    engine,
+		Cache:     cache,
+		Pool:      pool,
+		Devices:   registry,
+		Stats:     collector,
+		Schedules: schedules,
+		Log:       log,
 	})
+
+	// DHCP: optional, but when it is on we learn every device's hostname
+	// and can guarantee clients use us for DNS.
+	dhcpSrv := dhcp.New(cfg.DHCP, filepath.Join(cfg.DataDir, "leases.json"), log, func(l dhcp.Lease) {
+		name := l.Hostname
+		if name == "" {
+			name = l.Vendor
+		}
+		registry.Learn(l.IP, name)
+	})
+	for _, l := range dhcpSrv.Leases() {
+		if l.Hostname != "" {
+			registry.Learn(l.IP, l.Hostname)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	apiSrv := api.New(api.Deps{
-		Config:  cfg,
-		Engine:  engine,
-		Updater: updater,
-		Cache:   cache,
-		Pool:    pool,
-		Devices: registry,
-		Stats:   collector,
-		DNS:     dnsSrv,
-		Log:     log,
+		Config:    cfg,
+		Engine:    engine,
+		Updater:   updater,
+		Cache:     cache,
+		Pool:      pool,
+		Devices:   registry,
+		Stats:     collector,
+		DNS:       dnsSrv,
+		History:   hist,
+		Schedules: schedules,
+		DHCP:      dhcpSrv,
+		Log:       log,
 		Reload: func(c *config.Config) error {
 			if err := c.Validate(); err != nil {
 				return err
@@ -154,15 +200,25 @@ func main() {
 			engine.SetBlockSubdomains(c.DNS.BlockSubdomains)
 			pool.Set(buildUpstreams(c)...)
 			dnsSrv.ApplyConfig(c)
+			schedules.Set(c.Schedules)
+			dhcpSrv.SetConfig(c.DHCP)
 			cache.Flush()
 			log.Info("configuration reloaded")
 			return nil
 		},
 	})
 
-	errCh := make(chan error, 2)
+	errCh := make(chan error, 3)
 	go func() { errCh <- dnsSrv.ListenAndServe(ctx) }()
 	go func() { errCh <- apiSrv.ListenAndServe(ctx, cfg.WebAddr()) }()
+	if cfg.DHCP.Enabled {
+		go func() {
+			if err := dhcpSrv.ListenAndServe(ctx); err != nil {
+				// A DHCP failure must not take DNS down with it.
+				log.Error("dhcp server stopped", "err", err)
+			}
+		}()
+	}
 
 	if !*noUpdate {
 		go updater.Run(ctx, cfg.UpdateInterval())
@@ -172,12 +228,21 @@ func main() {
 		defer close(stopPersist)
 		go collector.RunPersist(time.Minute, stopPersist)
 	}
+	if hist != nil {
+		stopHistory := make(chan struct{})
+		defer close(stopHistory)
+		go hist.RunFlush(5*time.Second, stopHistory)
+		defer hist.Close()
+	}
 
 	log.Info("adblockerpro started",
 		"version", version,
 		"dns", cfg.DNSAddr(),
 		"dashboard", "http://"+cfg.WebAddr(),
-		"domains", engine.Domains().Len())
+		"domains", engine.Domains().Len(),
+		"schedules", len(cfg.Schedules),
+		"dhcp", cfg.DHCP.Enabled,
+		"history", hist != nil)
 
 	select {
 	case <-ctx.Done():

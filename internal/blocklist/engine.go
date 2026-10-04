@@ -120,7 +120,8 @@ type Engine struct {
 	// BlockSubdomains makes a listed domain also cover every subdomain.
 	blockSubdomains atomic.Bool
 
-	domains atomic.Pointer[DomainSet] // from upstream lists
+	domains      atomic.Pointer[DomainSet] // blocked domains from subscribed lists
+	allowDomains atomic.Pointer[DomainSet] // subscribed allowlists ("antigravity")
 
 	mu     sync.RWMutex
 	rules  []Rule
@@ -173,6 +174,7 @@ func New(blockSubdomains bool) *Engine {
 	e := &Engine{groups: map[string]*groupRules{}}
 	e.blockSubdomains.Store(blockSubdomains)
 	e.domains.Store(NewDomainSet(nil))
+	e.allowDomains.Store(NewDomainSet(nil))
 	e.SetRules(nil)
 	return e
 }
@@ -290,6 +292,20 @@ func (e *Engine) Check(domain, group string) Decision {
 		return Decision{Blocked: true, Rule: r.Pattern, Source: "denylist", MatchedDomain: domain}
 	}
 
+	if allow := e.allowDomains.Load(); allow.Len() > 0 {
+		if src, ok := allow.Contains(domain); ok {
+			return Decision{Rule: domain, Source: "allowlist:" + src, MatchedDomain: domain}
+		}
+		for i := 0; i < len(domain); i++ {
+			if domain[i] != '.' {
+				continue
+			}
+			if src, ok := allow.Contains(domain[i+1:]); ok {
+				return Decision{Rule: domain[i+1:], Source: "allowlist:" + src, MatchedDomain: domain[i+1:]}
+			}
+		}
+	}
+
 	set := e.domains.Load()
 	if src, ok := set.Contains(domain); ok {
 		return Decision{Blocked: true, Rule: domain, Source: src, MatchedDomain: domain}
@@ -319,3 +335,44 @@ func (e *Engine) CheckCNAMEs(targets []string, group string) Decision {
 	}
 	return Decision{}
 }
+
+// Matcher is a standalone pattern set, used by features that need the same
+// exact/wildcard/regex semantics as the rule engine (schedules, allowlist
+// subscriptions) without the rest of the engine.
+type Matcher struct {
+	rules compiledRules
+}
+
+// NewMatcher compiles patterns into a matcher. Invalid regexes are skipped.
+func NewMatcher(patterns []string) *Matcher {
+	rules := make([]Rule, 0, len(patterns))
+	for _, p := range patterns {
+		rules = append(rules, Rule{Pattern: p, Action: ActionBlock})
+	}
+	return &Matcher{rules: compile(rules, ActionBlock, "")}
+}
+
+// Match reports whether domain matches, and which pattern did it.
+func (m *Matcher) Match(domain string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	r, ok := m.rules.match(Normalize(domain))
+	return r.Pattern, ok
+}
+
+// Len is the number of compiled patterns.
+func (m *Matcher) Len() int {
+	if m == nil {
+		return 0
+	}
+	return len(m.rules.exact) + len(m.rules.wildcard) + len(m.rules.regex)
+}
+
+// SetAllowDomains installs a set of subscribed allowlist domains ("I trust
+// these lists to override my blocklists"), the equivalent of Pi-hole v6's
+// Antigravity lists.
+func (e *Engine) SetAllowDomains(d *DomainSet) { e.allowDomains.Store(d) }
+
+// AllowDomains returns the subscribed allowlist set.
+func (e *Engine) AllowDomains() *DomainSet { return e.allowDomains.Load() }

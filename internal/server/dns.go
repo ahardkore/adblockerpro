@@ -19,6 +19,7 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/devices"
 	"github.com/ahardkore/adblockerpro/internal/dnsmsg"
 	"github.com/ahardkore/adblockerpro/internal/resolver"
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/stats"
 )
 
@@ -29,7 +30,9 @@ type Deps struct {
 	Pool    *resolver.Pool
 	Devices *devices.Registry
 	Stats   *stats.Collector
-	Log     *slog.Logger
+	// Schedules applies time-of-day policy (bedtime, homework hours).
+	Schedules *schedule.Engine
+	Log       *slog.Logger
 }
 
 // DNS serves DNS over UDP and TCP, filtering as it goes.
@@ -47,6 +50,8 @@ type DNS struct {
 	timeout    time.Duration
 	allowed    []netip.Prefix
 	local      map[string]net.IP
+	forwards   []forward
+	dnssec     bool
 
 	limiter *rateLimiter
 
@@ -55,6 +60,13 @@ type DNS struct {
 	addr    string
 	started time.Time
 	wg      sync.WaitGroup
+}
+
+// forward is one conditional-forwarding route.
+type forward struct {
+	suffix string
+	pool   *resolver.Pool
+	name   string
 }
 
 // NewDNS builds a server from configuration.
@@ -87,6 +99,21 @@ func (s *DNS) ApplyConfig(cfg *config.Config) {
 	s.timeout = cfg.UpstreamTimeout()
 	s.allowed = allowed
 	s.local = local
+	s.dnssec = cfg.DNS.RequestDNSSEC
+	fwds := make([]forward, 0, len(cfg.DNS.ConditionalForward))
+	for _, f := range cfg.DNS.ConditionalForward {
+		suffix := blocklist.Normalize(f.Domain)
+		addr := config.NormalizeUpstream(f.Upstream)
+		if suffix == "" || addr == "" {
+			continue
+		}
+		fwds = append(fwds, forward{
+			suffix: suffix,
+			name:   "forward:" + addr,
+			pool:   resolver.NewPool(&resolver.UDPUpstream{Addr: addr, Timeout: cfg.UpstreamTimeout()}),
+		})
+	}
+	s.forwards = fwds
 	if cfg.DNS.RateLimitPerClient > 0 {
 		if s.limiter == nil {
 			s.limiter = newRateLimiter(cfg.DNS.RateLimitPerClient)
@@ -306,6 +333,9 @@ func (s *DNS) Handle(ctx context.Context, query []byte, client net.IP, proto str
 	blockHTTPS, cnameCheck, serveStale := s.blockHTTPS, s.cnameCheck, s.serveStale
 	timeout := s.timeout
 	local := s.local
+	forwards := s.forwards
+	wantDNSSEC := s.dnssec
+	blockTTL := s.blockTTL
 	s.mu.RUnlock()
 
 	clientStr := client.String()
@@ -352,7 +382,15 @@ func (s *DNS) Handle(ctx context.Context, query []byte, client net.IP, proto str
 		}
 		if blockHTTPS && (q.Type == dnsmsg.TypeHTTPS || q.Type == dnsmsg.TypeSVCB) {
 			entry.Source = "https-records-disabled"
-			return finish(dnsmsg.Block(query, qend, q, dnsmsg.SinkZeroIP, nil, nil, s.blockTTL), stats.StatusBlocked)
+			return finish(dnsmsg.Block(query, qend, q, dnsmsg.SinkZeroIP, nil, nil, blockTTL), stats.StatusBlocked)
+		}
+		// Time-of-day policy: bedtime, homework hours, dinner.
+		if s.Schedules != nil {
+			if blocked, name := s.Schedules.Decision(policy.Group, q.Name, start); blocked {
+				entry.Schedule, entry.Source = name, "schedule:"+name
+				entry.Rule = name
+				return finish(s.sinkhole(query, qend, q), stats.StatusBlocked)
+			}
 		}
 	}
 
@@ -370,7 +408,19 @@ func (s *DNS) Handle(ctx context.Context, query []byte, client net.IP, proto str
 		defer cancel()
 	}
 
-	resp, upstream, err := s.Pool.Exchange(exchangeCtx, query)
+	pool := s.Pool
+	outbound := query
+	for _, f := range forwards {
+		if q.Name == f.suffix || strings.HasSuffix(q.Name, "."+f.suffix) {
+			pool = f.pool
+			break
+		}
+	}
+	if wantDNSSEC {
+		outbound = dnsmsg.WithDNSSEC(query, 1232)
+	}
+
+	resp, upstream, err := pool.Exchange(exchangeCtx, outbound)
 	if err != nil {
 		if serveStale {
 			if cached, _, ok := s.Cache.Get(key, true); ok {
@@ -385,6 +435,7 @@ func (s *DNS) Handle(ctx context.Context, query []byte, client net.IP, proto str
 		return finish(dnsmsg.Error(query, dnsmsg.RcodeServFail), stats.StatusError)
 	}
 	entry.Upstream = upstream
+	entry.Validated = dnsmsg.Authenticated(resp)
 
 	// CNAME cloaking: a first-party hostname that resolves into an ad
 	// network's zone. Catch it on the way back.

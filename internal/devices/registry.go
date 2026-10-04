@@ -46,13 +46,16 @@ type Registry struct {
 	mu      sync.RWMutex
 	entries []entry
 	seen    map[string]*Seen
+	// learned holds names discovered from DHCP, used when a client has no
+	// explicit device entry.
+	learned map[string]string
 	// globalPauseUntil pauses filtering for every client.
 	globalPauseUntil time.Time
 }
 
 // New builds a registry from the configured devices.
 func New(devs []config.Device) *Registry {
-	r := &Registry{seen: map[string]*Seen{}}
+	r := &Registry{seen: map[string]*Seen{}, learned: map[string]string{}}
 	r.Set(devs)
 	return r
 }
@@ -126,11 +129,44 @@ func (r *Registry) Lookup(ip net.IP) Policy {
 	paused := time.Now().Before(r.globalPauseUntil)
 	r.mu.RUnlock()
 
-	p, _ := lookup(entries, a.Unmap())
+	p, found := lookup(entries, a.Unmap())
+	if !found || p.Name == "" {
+		r.mu.RLock()
+		if name, ok := r.learned[a.Unmap().String()]; ok {
+			p.Name = name
+		}
+		r.mu.RUnlock()
+	}
 	if paused {
 		p.Paused = true
 	}
 	return p
+}
+
+// Learn records a name discovered from DHCP for an address. Explicit device
+// entries always win over learned names.
+func (r *Registry) Learn(ip, name string) {
+	ip, name = strings.TrimSpace(ip), strings.TrimSpace(name)
+	if ip == "" || name == "" {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.learned[ip] = name
+	if s, ok := r.seen[ip]; ok && s.Name == "" {
+		s.Name = name
+	}
+}
+
+// LearnedNames returns the DHCP-discovered names.
+func (r *Registry) LearnedNames() map[string]string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make(map[string]string, len(r.learned))
+	for k, v := range r.learned {
+		out[k] = v
+	}
+	return out
 }
 
 // Observe records a query from a client for the discovered-devices view.
@@ -145,6 +181,9 @@ func (r *Registry) Observe(ip string, blocked bool) {
 			if p, found := lookup(r.entries, a); found {
 				s.Name, s.Group, s.Paused = p.Name, p.Group, p.Paused
 			}
+		}
+		if s.Name == "" {
+			s.Name = r.learned[ip]
 		}
 		// Keep the table bounded on busy networks.
 		if len(r.seen) > 4096 {

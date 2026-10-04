@@ -590,3 +590,76 @@ func SetTTLs(msg []byte, info TTLInfo, ttl uint32) {
 		binary.BigEndian.PutUint32(msg[off:off+4], ttl)
 	}
 }
+
+// Additional header flag bits.
+const (
+	FlagAD uint16 = 1 << 5 // authenticated data (upstream validated DNSSEC)
+	FlagCD uint16 = 1 << 4 // checking disabled
+)
+
+// Authenticated reports whether the AD bit is set, i.e. a validating
+// upstream vouched for the answer's DNSSEC signatures.
+func Authenticated(msg []byte) bool {
+	h, err := ParseHeader(msg)
+	if err != nil {
+		return false
+	}
+	return h.Flags&FlagAD != 0
+}
+
+// HasOPT reports whether the message already carries an EDNS0 OPT record.
+func HasOPT(msg []byte) bool {
+	h, err := ParseHeader(msg)
+	if err != nil || h.ARCount == 0 {
+		return false
+	}
+	off := HeaderLen
+	for i := 0; i < int(h.QDCount); i++ {
+		if off, err = skipName(msg, off); err != nil {
+			return false
+		}
+		off += 4
+	}
+	total := int(h.ANCount) + int(h.NSCount) + int(h.ARCount)
+	for i := 0; i < total; i++ {
+		if off, err = skipName(msg, off); err != nil {
+			return false
+		}
+		if off+10 > len(msg) {
+			return false
+		}
+		if binary.BigEndian.Uint16(msg[off:off+2]) == TypeOPT {
+			return true
+		}
+		off += 10 + int(binary.BigEndian.Uint16(msg[off+8:off+10]))
+	}
+	return false
+}
+
+// WithDNSSEC returns a copy of query carrying an EDNS0 OPT record with the
+// DO bit set, so a validating upstream signs off on the answer (the AD bit
+// comes back in the reply). Queries that already have an OPT record are
+// returned unchanged — rewriting a client's own EDNS options would be rude.
+func WithDNSSEC(query []byte, udpSize uint16) []byte {
+	if len(query) < HeaderLen || HasOPT(query) {
+		return query
+	}
+	if udpSize < 512 {
+		udpSize = 1232 // the DNS flag day recommendation
+	}
+	h, err := ParseHeader(query)
+	if err != nil {
+		return query
+	}
+	out := make([]byte, 0, len(query)+11)
+	out = append(out, query...)
+	out = append(out,
+		0x00, // root name
+	)
+	out = binary.BigEndian.AppendUint16(out, TypeOPT)
+	out = binary.BigEndian.AppendUint16(out, udpSize)       // class = UDP payload size
+	out = binary.BigEndian.AppendUint32(out, 0x00008000)    // extended rcode/version + DO
+	out = binary.BigEndian.AppendUint16(out, 0)             // rdlength
+	binary.BigEndian.PutUint16(out[10:12], h.ARCount+1)
+	return out
+}

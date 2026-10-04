@@ -44,6 +44,11 @@ type Entry struct {
 	Answer   string    `json:"answer,omitempty"`
 	Rcode    string    `json:"rcode,omitempty"`
 	MS       float64   `json:"ms"`
+	// Validated means the upstream set the AD bit: the answer's DNSSEC
+	// signatures were checked.
+	Validated bool `json:"validated,omitempty"`
+	// Schedule names the time window that caused a block, if any.
+	Schedule string `json:"schedule,omitempty"`
 }
 
 // Blocked reports whether this query was sinkholed.
@@ -77,6 +82,7 @@ type Collector struct {
 	anonymize bool
 
 	total, blocked, cached, errors int64
+	validated                      int64
 	domains                        map[string]int64
 	blocks                         map[string]int64
 	clients                        map[string]int64
@@ -86,6 +92,15 @@ type Collector struct {
 	latencyN                       int64
 	started                        time.Time
 	path                           string
+	sink                           func(Entry)
+}
+
+// SetSink registers a callback invoked for every recorded query, outside the
+// collector's lock. The long-term history store uses it.
+func (c *Collector) SetSink(fn func(Entry)) {
+	c.mu.Lock()
+	c.sink = fn
+	c.mu.Unlock()
 }
 
 // New creates a collector keeping size recent queries.
@@ -128,6 +143,14 @@ func (c *Collector) Record(e Entry) {
 	e.Client = c.AnonymizeClient(e.Client)
 	e.Domain = strings.ToLower(e.Domain)
 
+	sink := c.record(e)
+	if sink != nil {
+		sink(e)
+	}
+}
+
+// record updates the counters and returns the sink to notify, if any.
+func (c *Collector) record(e Entry) func(Entry) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -143,6 +166,9 @@ func (c *Collector) Record(e Entry) {
 	c.types[e.Type]++
 	c.latencySum += e.MS
 	c.latencyN++
+	if e.Validated {
+		c.validated++
+	}
 
 	key := bucketKey(e.Time)
 	b := c.buckets[key]
@@ -170,6 +196,7 @@ func (c *Collector) Record(e Entry) {
 	if len(c.buckets) > 24*6*8 {
 		c.trimBucketsLocked(24 * 6 * 7)
 	}
+	return c.sink
 }
 
 func (c *Collector) trimLocked(m map[string]int64, keep int) {
@@ -263,6 +290,7 @@ type Summary struct {
 	Blocked      int64     `json:"blocked"`
 	Cached       int64     `json:"cached"`
 	Errors       int64     `json:"errors"`
+	Validated    int64     `json:"validated"`
 	BlockPercent float64   `json:"block_percent"`
 	AvgMS        float64   `json:"avg_ms"`
 	Clients      int       `json:"clients"`
@@ -304,6 +332,7 @@ func (c *Collector) Summary(hours int) Summary {
 		Blocked:    c.blocked,
 		Cached:     c.cached,
 		Errors:     c.errors,
+		Validated:  c.validated,
 		Clients:    len(c.clients),
 		Since:      c.started,
 		TopAllowed: topN(c.domains, 10),
@@ -340,7 +369,7 @@ func (c *Collector) Reset() {
 	defer c.mu.Unlock()
 	c.ring = make([]Entry, c.size)
 	c.head, c.filled = 0, false
-	c.total, c.blocked, c.cached, c.errors = 0, 0, 0, 0
+	c.total, c.blocked, c.cached, c.errors, c.validated = 0, 0, 0, 0, 0
 	c.domains = map[string]int64{}
 	c.blocks = map[string]int64{}
 	c.clients = map[string]int64{}

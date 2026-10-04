@@ -4,6 +4,7 @@ package config
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
+	"github.com/ahardkore/adblockerpro/internal/dhcp"
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 )
 
 // DefaultPath is where the service looks for its configuration.
@@ -57,6 +60,24 @@ type DNSConfig struct {
 	AllowedClients []string `json:"allowed_clients"`
 	// LocalRecords are static answers, e.g. "pi.hole": "192.168.1.2".
 	LocalRecords map[string]string `json:"local_records,omitempty"`
+	// ConditionalForward sends a domain suffix to a specific resolver,
+	// typically your router for local hostnames.
+	ConditionalForward []Forward `json:"conditional_forward,omitempty"`
+	// RequestDNSSEC adds an EDNS0 OPT record with the DO bit so upstreams
+	// validate and report authenticated data (the AD bit), which is then
+	// tracked per query in the log.
+	RequestDNSSEC bool `json:"request_dnssec"`
+	// DoHServer exposes /dns-query on the dashboard port so phones and
+	// laptops can keep using this resolver off the LAN.
+	DoHServer bool `json:"doh_server"`
+}
+
+// Forward is one conditional-forwarding entry.
+type Forward struct {
+	// Domain is a suffix such as "home.arpa" or "1.168.192.in-addr.arpa".
+	Domain string `json:"domain"`
+	// Upstream is host[:port] of the resolver that owns it.
+	Upstream string `json:"upstream"`
 }
 
 // WebConfig configures the dashboard and API.
@@ -82,6 +103,12 @@ type Device struct {
 	Group string `json:"group,omitempty"`
 	// Paused disables filtering for this device entirely.
 	Paused bool `json:"paused,omitempty"`
+}
+
+// HistoryConfig configures the long-term query store.
+type HistoryConfig struct {
+	Enabled       bool `json:"enabled"`
+	RetentionDays int  `json:"retention_days"`
 }
 
 // LogConfig configures logging and the query log.
@@ -146,6 +173,14 @@ func Default() *Config {
 		},
 		Rules:   []blocklist.Rule{},
 		Devices: []Device{},
+		History: HistoryConfig{Enabled: true, RetentionDays: 30},
+		DHCP: dhcp.Config{
+			Enabled:    false,
+			Netmask:    "255.255.255.0",
+			LeaseHours: 12,
+			DomainName: "lan",
+		},
+		Schedules: []schedule.Schedule{},
 		Log: LogConfig{
 			Level:        "info",
 			QueryLogSize: 20000,
@@ -229,6 +264,15 @@ func (c *Config) applyDefaults() {
 	if c.Log.QueryLogSize == 0 {
 		c.Log.QueryLogSize = d.Log.QueryLogSize
 	}
+	if c.History.RetentionDays == 0 {
+		c.History.RetentionDays = d.History.RetentionDays
+	}
+	if c.DHCP.LeaseHours == 0 {
+		c.DHCP.LeaseHours = d.DHCP.LeaseHours
+	}
+	if c.DHCP.Netmask == "" {
+		c.DHCP.Netmask = d.DHCP.Netmask
+	}
 	for i := range c.Lists.Sources {
 		if c.Lists.Sources[i].ID == "" {
 			c.Lists.Sources[i].ID = blocklist.SourceID(c.Lists.Sources[i].URL)
@@ -254,6 +298,22 @@ func (c *Config) Validate() error {
 	}
 	if len(c.DNS.Upstreams) == 0 && len(c.DNS.DoHUpstreams) == 0 {
 		return fmt.Errorf("at least one upstream resolver is required")
+	}
+	if c.DHCP.Enabled {
+		for _, field := range []struct{ name, value string }{
+			{"dhcp.server_ip", c.DHCP.ServerIP},
+			{"dhcp.range_start", c.DHCP.RangeStart},
+			{"dhcp.range_end", c.DHCP.RangeEnd},
+		} {
+			if net.ParseIP(field.value) == nil {
+				return fmt.Errorf("%s must be an IPv4 address", field.name)
+			}
+		}
+	}
+	for _, s := range c.Schedules {
+		if err := schedule.Validate(s); err != nil {
+			return err
+		}
 	}
 	return nil
 }
