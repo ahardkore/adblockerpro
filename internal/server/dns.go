@@ -54,6 +54,10 @@ type DNS struct {
 	dnssec     bool
 
 	limiter *rateLimiter
+	// group coalesces identical concurrent lookups.
+	group *resolver.Group
+	// prefetch refreshes popular entries before they expire.
+	prefetch bool
 
 	udp     *net.UDPConn
 	tcpLn   net.Listener
@@ -71,7 +75,7 @@ type forward struct {
 
 // NewDNS builds a server from configuration.
 func NewDNS(cfg *config.Config, deps Deps) *DNS {
-	s := &DNS{Deps: deps, addr: cfg.DNSAddr()}
+	s := &DNS{Deps: deps, addr: cfg.DNSAddr(), group: resolver.NewGroup()}
 	s.ApplyConfig(cfg)
 	return s
 }
@@ -100,6 +104,7 @@ func (s *DNS) ApplyConfig(cfg *config.Config) {
 	s.allowed = allowed
 	s.local = local
 	s.dnssec = cfg.DNS.RequestDNSSEC
+	s.prefetch = cfg.DNS.Prefetch
 	fwds := make([]forward, 0, len(cfg.DNS.ConditionalForward))
 	for _, f := range cfg.DNS.ConditionalForward {
 		suffix := blocklist.Normalize(f.Domain)
@@ -188,9 +193,10 @@ func (s *DNS) ListenAndServe(ctx context.Context) error {
 	s.udp, s.tcpLn, s.started = uc, ln, time.Now()
 	s.Log.Info("dns listening", "addr", s.addr, "proto", "udp+tcp")
 
-	s.wg.Add(2)
+	s.wg.Add(3)
 	go func() { defer s.wg.Done(); s.serveUDP(ctx) }()
 	go func() { defer s.wg.Done(); s.serveTCP(ctx) }()
+	go func() { defer s.wg.Done(); s.runPrefetch(ctx) }()
 
 	<-ctx.Done()
 	_ = uc.Close()
@@ -304,6 +310,56 @@ func (s *DNS) handleTCPConn(ctx context.Context, conn net.Conn) {
 			return
 		}
 	}
+}
+
+// runPrefetch keeps popular entries warm: anything that has been asked for
+// repeatedly is refreshed in the background a few seconds before its TTL
+// runs out, so clients never pay for the upstream round trip.
+func (s *DNS) runPrefetch(ctx context.Context) {
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.mu.RLock()
+			enabled, timeout := s.prefetch, s.timeout
+			s.mu.RUnlock()
+			if !enabled {
+				continue
+			}
+			for _, key := range s.Cache.ExpiringSoon(20*time.Second, 2, 32) {
+				s.prefetchOne(ctx, key, timeout)
+			}
+		}
+	}
+}
+
+func (s *DNS) prefetchOne(ctx context.Context, key string, timeout time.Duration) {
+	defer s.Cache.FinishPrefetch(key)
+
+	name, qtype, ok := resolver.SplitCacheKey(key)
+	if !ok {
+		return
+	}
+	query, err := dnsmsg.BuildQuery(name, qtype, uint16(time.Now().UnixNano()))
+	if err != nil {
+		return
+	}
+	exchangeCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	resp, _, err := s.Pool.Exchange(exchangeCtx, query)
+	if err != nil {
+		s.Log.Debug("prefetch failed", "domain", name, "err", err)
+		return
+	}
+	if h, err := dnsmsg.ParseHeader(resp); err != nil || h.Rcode() != dnsmsg.RcodeSuccess {
+		return
+	}
+	s.Cache.Put(key, resp)
+	s.Cache.CountPrefetch()
 }
 
 // Handle filters and answers a single query. It is exported so tests (and
@@ -420,7 +476,12 @@ func (s *DNS) Handle(ctx context.Context, query []byte, client net.IP, proto str
 		outbound = dnsmsg.WithDNSSEC(query, 1232)
 	}
 
-	resp, upstream, err := pool.Exchange(exchangeCtx, outbound)
+	resp, upstream, shared, err := s.group.Do(exchangeCtx, key, func() ([]byte, string, error) {
+		return pool.Exchange(exchangeCtx, outbound)
+	})
+	if shared {
+		entry.Source = "coalesced"
+	}
 	if err != nil {
 		if serveStale {
 			if cached, _, ok := s.Cache.Get(key, true); ok {

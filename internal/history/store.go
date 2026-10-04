@@ -596,3 +596,132 @@ func (s *Store) Export(w io.Writer, since time.Time) error {
 	}
 	return nil
 }
+
+// ClientReport is a per-device drill-down over a window of history.
+type ClientReport struct {
+	Client       string          `json:"client"`
+	Device       string          `json:"device,omitempty"`
+	From         time.Time       `json:"from"`
+	To           time.Time       `json:"to"`
+	Total        int64           `json:"total"`
+	Blocked      int64           `json:"blocked"`
+	Cached       int64           `json:"cached"`
+	Errors       int64           `json:"errors"`
+	BlockRatio   float64         `json:"block_ratio"`
+	AvgMS        float64         `json:"avg_ms"`
+	FirstSeen    time.Time       `json:"first_seen"`
+	LastSeen     time.Time       `json:"last_seen"`
+	TopDomains   []stats.TopItem `json:"top_domains"`
+	TopBlocked   []stats.TopItem `json:"top_blocked"`
+	Types        []stats.TopItem `json:"types"`
+	Hourly       []int64         `json:"hourly"`
+	BlockedHours []int64         `json:"blocked_hourly"`
+}
+
+// ClientReport builds the drill-down for one client address.
+func (s *Store) ClientReport(client string, since time.Time, topN int) ClientReport {
+	if topN <= 0 {
+		topN = 10
+	}
+	rep := ClientReport{
+		Client:       client,
+		From:         since,
+		To:           time.Now().UTC(),
+		Hourly:       make([]int64, 24),
+		BlockedHours: make([]int64, 24),
+	}
+	domains := map[string]int64{}
+	blocked := map[string]int64{}
+	types := map[string]int64{}
+	var totalMS float64
+
+	for _, day := range s.Days() {
+		if !since.IsZero() && day < dayKey(since) {
+			continue
+		}
+		recs, err := s.readShard(day)
+		if err != nil {
+			continue
+		}
+		for _, r := range recs {
+			if r.Client != client || r.Time.Before(since) {
+				continue
+			}
+			rep.Total++
+			totalMS += r.MS
+			domains[r.Domain]++
+			types[r.Type]++
+			hour := r.Time.UTC().Hour()
+			rep.Hourly[hour]++
+			switch r.Status {
+			case stats.StatusBlocked:
+				rep.Blocked++
+				rep.BlockedHours[hour]++
+				blocked[r.Domain]++
+			case stats.StatusCached:
+				rep.Cached++
+			case stats.StatusError:
+				rep.Errors++
+			}
+			if r.Device != "" {
+				rep.Device = r.Device
+			}
+			if rep.FirstSeen.IsZero() || r.Time.Before(rep.FirstSeen) {
+				rep.FirstSeen = r.Time
+			}
+			if r.Time.After(rep.LastSeen) {
+				rep.LastSeen = r.Time
+			}
+		}
+	}
+	if rep.Total > 0 {
+		rep.BlockRatio = float64(rep.Blocked) / float64(rep.Total) * 100
+		rep.AvgMS = totalMS / float64(rep.Total)
+	}
+	rep.TopDomains = topItems(domains, topN)
+	rep.TopBlocked = topItems(blocked, topN)
+	rep.Types = topItems(types, 8)
+	return rep
+}
+
+// Clients lists every address seen in the window, busiest first.
+func (s *Store) Clients(since time.Time) []stats.TopItem {
+	counts := map[string]int64{}
+	for _, day := range s.Days() {
+		if !since.IsZero() && day < dayKey(since) {
+			continue
+		}
+		recs, err := s.readShard(day)
+		if err != nil {
+			continue
+		}
+		for _, r := range recs {
+			if r.Time.Before(since) {
+				continue
+			}
+			counts[r.Client]++
+		}
+	}
+	return topItems(counts, 0)
+}
+
+// topItems sorts a counter map, biggest first; n <= 0 keeps everything.
+func topItems(counts map[string]int64, n int) []stats.TopItem {
+	out := make([]stats.TopItem, 0, len(counts))
+	for k, v := range counts {
+		if k == "" {
+			continue
+		}
+		out = append(out, stats.TopItem{Name: k, Count: v})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Count == out[j].Count {
+			return out[i].Name < out[j].Name
+		}
+		return out[i].Count > out[j].Count
+	})
+	if n > 0 && len(out) > n {
+		out = out[:n]
+	}
+	return out
+}

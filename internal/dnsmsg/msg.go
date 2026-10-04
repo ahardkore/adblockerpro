@@ -663,3 +663,20 @@ func WithDNSSEC(query []byte, udpSize uint16) []byte {
 	binary.BigEndian.PutUint16(out[10:12], h.ARCount+1)
 	return out
 }
+
+// BuildQuery assembles a standard recursive query, used by the prefetcher
+// and by the command line tools.
+func BuildQuery(name string, qtype uint16, id uint16) ([]byte, error) {
+	enc, err := EncodeName(name)
+	if err != nil {
+		return nil, err
+	}
+	msg := make([]byte, HeaderLen, HeaderLen+len(enc)+4)
+	binary.BigEndian.PutUint16(msg[0:2], id)
+	binary.BigEndian.PutUint16(msg[2:4], FlagRD)
+	binary.BigEndian.PutUint16(msg[4:6], 1)
+	msg = append(msg, enc...)
+	msg = binary.BigEndian.AppendUint16(msg, qtype)
+	msg = binary.BigEndian.AppendUint16(msg, ClassINET)
+	return msg, nil
+}

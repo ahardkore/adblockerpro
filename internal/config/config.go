@@ -63,6 +63,8 @@ type DNSConfig struct {
 	// ConditionalForward sends a domain suffix to a specific resolver,
 	// typically your router for local hostnames.
 	ConditionalForward []Forward `json:"conditional_forward,omitempty"`
+	// Prefetch refreshes popular cache entries shortly before they expire.
+	Prefetch bool `json:"prefetch"`
 	// RequestDNSSEC adds an EDNS0 OPT record with the DO bit so upstreams
 	// validate and report authenticated data (the AD bit), which is then
 	// tracked per query in the log.
@@ -84,8 +86,30 @@ type Forward struct {
 type WebConfig struct {
 	Listen string `json:"listen"`
 	Port   int    `json:"port"`
-	// AdminToken, when set, is required by the API and the dashboard login.
+	// AdminToken, when set, is required by the API and by scripts. It is
+	// the machine credential; humans should use a password instead.
 	AdminToken string `json:"admin_token,omitempty"`
+	// AdminPasswordHash is a PBKDF2-SHA256 hash produced by the auth
+	// package. When set, the dashboard asks for a password and hands out
+	// a session cookie; the password itself is never stored.
+	AdminPasswordHash string `json:"admin_password_hash,omitempty"`
+	// SessionHours is how long a dashboard login stays valid.
+	SessionHours int `json:"session_hours"`
+	// TLS serves the dashboard over HTTPS as well as HTTP.
+	TLS TLSConfig `json:"tls"`
+}
+
+// TLSConfig configures HTTPS for the dashboard.
+type TLSConfig struct {
+	Enabled bool `json:"enabled"`
+	// Port is the HTTPS listener, 8443 by default. The plain HTTP port
+	// keeps working and redirects when RedirectHTTP is set.
+	Port int `json:"port"`
+	// CertFile and KeyFile are optional. When empty a self-signed
+	// certificate is generated in DataDir and renewed automatically.
+	CertFile     string `json:"cert_file,omitempty"`
+	KeyFile      string `json:"key_file,omitempty"`
+	RedirectHTTP bool   `json:"redirect_http"`
 }
 
 // ListsConfig configures blocklist sources.
@@ -164,14 +188,21 @@ func Default() *Config {
 			CacheMinTTL:        30,
 			CacheMaxTTL:        86400,
 			ServeStale:         true,
+			Prefetch:           true,
 			UpstreamTimeoutMS:  3500,
 			RateLimitPerClient: 0,
 			AllowedClients:     nil,
 			LocalRecords:       map[string]string{},
 		},
 		Web: WebConfig{
-			Listen: "0.0.0.0",
-			Port:   8080,
+			Listen:       "0.0.0.0",
+			Port:         8080,
+			SessionHours: 24 * 7,
+			TLS: TLSConfig{
+				Enabled:      false,
+				Port:         8443,
+				RedirectHTTP: false,
+			},
 		},
 		Lists: ListsConfig{
 			Sources:             blocklist.DefaultSources(),
@@ -294,6 +325,17 @@ func (c *Config) Validate() error {
 	if c.Web.Port < 1 || c.Web.Port > 65535 {
 		return fmt.Errorf("web.port %d out of range", c.Web.Port)
 	}
+	if c.Web.TLS.Enabled {
+		if c.Web.TLS.Port < 1 || c.Web.TLS.Port > 65535 {
+			return fmt.Errorf("web.tls.port %d out of range", c.Web.TLS.Port)
+		}
+		if c.Web.TLS.Port == c.Web.Port {
+			return fmt.Errorf("web.tls.port must differ from web.port")
+		}
+		if (c.Web.TLS.CertFile == "") != (c.Web.TLS.KeyFile == "") {
+			return fmt.Errorf("web.tls needs both cert_file and key_file, or neither")
+		}
+	}
 	switch c.DNS.Sinkhole {
 	case "zero-ip", "nxdomain", "refused", "custom-ip":
 	default:
@@ -370,6 +412,23 @@ func (c *Config) DNSAddr() string {
 // WebAddr is the host:port the dashboard binds to.
 func (c *Config) WebAddr() string {
 	return fmt.Sprintf("%s:%d", c.Web.Listen, c.Web.Port)
+}
+
+// WebTLSAddr is the HTTPS listen address for the dashboard.
+func (c *Config) WebTLSAddr() string {
+	port := c.Web.TLS.Port
+	if port == 0 {
+		port = 8443
+	}
+	return fmt.Sprintf("%s:%d", c.Web.Listen, port)
+}
+
+// SessionTTL is how long a dashboard session lasts.
+func (c *Config) SessionTTL() time.Duration {
+	if c.Web.SessionHours <= 0 {
+		return 7 * 24 * time.Hour
+	}
+	return time.Duration(c.Web.SessionHours) * time.Hour
 }
 
 // NormalizeUpstream appends the default DNS port when the entry has none.

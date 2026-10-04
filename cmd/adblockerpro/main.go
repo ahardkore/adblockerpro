@@ -6,6 +6,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/ahardkore/adblockerpro/internal/api"
+	"github.com/ahardkore/adblockerpro/internal/auth"
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/devices"
@@ -43,8 +45,16 @@ func main() {
 		check    = flag.String("check", "", "evaluate a domain against the lists and exit")
 		noUpdate = flag.Bool("no-update", false, "do not download blocklists on start-up")
 		showVer  = flag.Bool("version", false, "print the version and exit")
+		setPass  = flag.Bool("set-password", false, "set the dashboard password and exit")
 	)
 	flag.Parse()
+
+	if *setPass {
+		if err := setPasswordInteractive(*cfgPath); err != nil {
+			fatal("%v", err)
+		}
+		return
+	}
 
 	if *showVer {
 		fmt.Printf("adblockerpro %s\n", version)
@@ -118,6 +128,20 @@ func main() {
 	cache := resolver.NewCache(cfg.DNS.CacheSize,
 		time.Duration(cfg.DNS.CacheMinTTL)*time.Second,
 		time.Duration(cfg.DNS.CacheMaxTTL)*time.Second)
+
+	// A reboot should not mean a cold cache: entries that are still within
+	// their TTL are reloaded from disk and saved again on shutdown.
+	cachePath := filepath.Join(cfg.DataDir, "cache.bin")
+	if n, err := cache.Load(cachePath); err != nil {
+		log.Debug("no cache to restore", "err", err)
+	} else if n > 0 {
+		log.Info("restored DNS cache", "entries", n)
+	}
+	defer func() {
+		if err := cache.Save(cachePath); err != nil {
+			log.Warn("cannot save cache", "err", err)
+		}
+	}()
 	pool := resolver.NewPool(buildUpstreams(cfg)...)
 	registry := devices.New(cfg.Devices)
 
@@ -238,7 +262,7 @@ func main() {
 	log.Info("adblockerpro started",
 		"version", version,
 		"dns", cfg.DNSAddr(),
-		"dashboard", "http://"+cfg.WebAddr(),
+		"dashboard", dashboardURL(cfg),
 		"domains", engine.Domains().Len(),
 		"schedules", len(cfg.Schedules),
 		"dhcp", cfg.DHCP.Enabled,
@@ -267,6 +291,41 @@ func main() {
 	time.Sleep(200 * time.Millisecond)
 }
 
+// setPasswordInteractive hashes a password read from the terminal and
+// stores it in the config file, so the secret never appears in a shell
+// history or in the JSON.
+func setPasswordInteractive(path string) error {
+	cfg, err := config.Load(path)
+	if err != nil {
+		return err
+	}
+	fmt.Fprint(os.Stderr, "New dashboard password (min 8 chars): ")
+	reader := bufio.NewReader(os.Stdin)
+	line, err := reader.ReadString('\n')
+	if err != nil && line == "" {
+		return err
+	}
+	pw := strings.TrimRight(line, "\r\n")
+	if pw == "" {
+		cfg.Web.AdminPasswordHash = ""
+		if err := cfg.Save(); err != nil {
+			return err
+		}
+		fmt.Fprintln(os.Stderr, "Password cleared; the dashboard is open again.")
+		return nil
+	}
+	hash, err := auth.HashPassword(pw)
+	if err != nil {
+		return err
+	}
+	cfg.Web.AdminPasswordHash = hash
+	if err := cfg.Save(); err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stderr, "Password updated. Restart adblockerpro or log in again.")
+	return nil
+}
+
 func buildUpstreams(cfg *config.Config) []resolver.Upstream {
 	timeout := cfg.UpstreamTimeout()
 	var doh, plain []resolver.Upstream
@@ -284,6 +343,14 @@ func buildUpstreams(cfg *config.Config) []resolver.Upstream {
 		return append(doh, plain...)
 	}
 	return append(plain, doh...)
+}
+
+// dashboardURL is what we print in the start-up log.
+func dashboardURL(cfg *config.Config) string {
+	if cfg.Web.TLS.Enabled {
+		return "https://" + cfg.WebTLSAddr()
+	}
+	return "http://" + cfg.WebAddr()
 }
 
 func newLogger(level string) *slog.Logger {

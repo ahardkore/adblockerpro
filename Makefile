@@ -1,4 +1,5 @@
 BINARY      := adblockerpro
+CTL         := abpctl
 VERSION     ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS     := -s -w -X main.version=$(VERSION) -X github.com/ahardkore/adblockerpro/internal/api.Version=$(VERSION)
 GOFLAGS     := -trimpath
@@ -11,6 +12,7 @@ all: build
 ## build: compile for the host
 build:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/adblockerpro
+	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(CTL) ./cmd/abpctl
 
 ## test: run the unit tests
 test:
@@ -31,25 +33,29 @@ run: build
 pi64:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-arm64 ./cmd/adblockerpro
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(CTL)-linux-arm64 ./cmd/abpctl
 
 ## pi32: Raspberry Pi 2/3/4 running 32-bit Raspberry Pi OS
 pi32:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-armv7 ./cmd/adblockerpro
+	GOOS=linux GOARCH=arm GOARM=7 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(CTL)-linux-armv7 ./cmd/abpctl
 
 ## pi: Pi 1 / Zero / Zero W (ARMv6)
 pi:
 	mkdir -p $(DIST)
 	GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-armv6 ./cmd/adblockerpro
+	GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(CTL)-linux-armv6 ./cmd/abpctl
 
 ## release: build every Raspberry Pi target plus amd64
 release: pi pi32 pi64
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-amd64 ./cmd/adblockerpro
-	cd $(DIST) && sha256sum $(BINARY)-* > SHA256SUMS
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(CTL)-linux-amd64 ./cmd/abpctl
+	cd $(DIST) && sha256sum $(BINARY)-* $(CTL)-* > SHA256SUMS
 
 ## install: install the host build as a systemd service (run with sudo)
 install: build
 	./deploy/install.sh --local
 
 clean:
-	rm -rf $(BINARY) $(DIST) dev-data dev-config.json
+	rm -rf $(BINARY) $(CTL) $(DIST) dev-data dev-config.json

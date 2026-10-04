@@ -3,6 +3,7 @@ package resolver
 import (
 	"container/list"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -21,6 +22,11 @@ type cacheEntry struct {
 	stored  time.Time
 	expires time.Time
 	rcode   uint16
+	// hits counts how often this entry has been served, which is what
+	// makes it a candidate for prefetching before it expires.
+	hits int
+	// prefetching guards against queuing the same refresh twice.
+	prefetching bool
 }
 
 // Cache is a bounded LRU of raw DNS responses. Entries are stored verbatim
@@ -32,10 +38,18 @@ type Cache struct {
 	maxTTL  time.Duration
 	items   map[string]*list.Element
 	order   *list.List
-	hits    uint64
-	misses  uint64
-	stale   uint64
-	evicted uint64
+	hits       uint64
+	misses     uint64
+	stale      uint64
+	evicted    uint64
+	prefetched uint64
+}
+
+// CountPrefetch records a successful background refresh.
+func (c *Cache) CountPrefetch() {
+	c.mu.Lock()
+	c.prefetched++
+	c.mu.Unlock()
 }
 
 // NewCache builds a cache holding at most max entries, clamping TTLs into
@@ -127,6 +141,7 @@ func (c *Cache) Get(key string, allowStale bool) (msg []byte, stale bool, ok boo
 		return nil, false, false
 	}
 	c.order.MoveToFront(el)
+	e.hits++
 	out := append([]byte(nil), e.msg...)
 	elapsed := uint32(now.Sub(e.stored) / time.Second)
 	dnsmsg.AgeTTLs(out, e.ttls, elapsed)
@@ -138,6 +153,36 @@ func (c *Cache) Get(key string, allowStale bool) (msg []byte, stale bool, ok boo
 	}
 	c.hits++
 	return out, false, true
+}
+
+// ExpiringSoon returns the keys of popular entries that are about to
+// expire, so they can be refreshed before anyone notices. Each key is
+// returned at most once per refresh cycle.
+func (c *Cache) ExpiringSoon(window time.Duration, minHits, max int) []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	now := time.Now()
+	out := make([]string, 0, max)
+	for el := c.order.Front(); el != nil && len(out) < max; el = el.Next() {
+		e := el.Value.(*cacheEntry)
+		if e.prefetching || e.hits < minHits {
+			continue
+		}
+		if e.expires.After(now) && e.expires.Sub(now) <= window {
+			e.prefetching = true
+			out = append(out, e.key)
+		}
+	}
+	return out
+}
+
+// FinishPrefetch clears the in-progress marker for a key.
+func (c *Cache) FinishPrefetch(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if el, ok := c.items[key]; ok {
+		el.Value.(*cacheEntry).prefetching = false
+	}
 }
 
 // Delete drops one entry.
@@ -162,7 +207,8 @@ func (c *Cache) Flush() int {
 
 // CacheStats is a snapshot of cache counters.
 type CacheStats struct {
-	Entries int     `json:"entries"`
+	Entries   int    `json:"entries"`
+	Prefetched uint64 `json:"prefetched"`
 	Max     int     `json:"max"`
 	Hits    uint64  `json:"hits"`
 	Misses  uint64  `json:"misses"`
@@ -176,7 +222,8 @@ func (c *Cache) Stats() CacheStats {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	s := CacheStats{
-		Entries: c.order.Len(),
+		Entries:    c.order.Len(),
+		Prefetched: c.prefetched,
 		Max:     c.max,
 		Hits:    c.hits,
 		Misses:  c.misses,
@@ -187,4 +234,17 @@ func (c *Cache) Stats() CacheStats {
 		s.HitRate = float64(s.Hits) / float64(total) * 100
 	}
 	return s
+}
+
+// SplitCacheKey reverses CacheKey.
+func SplitCacheKey(key string) (name string, qtype uint16, ok bool) {
+	i := strings.LastIndexByte(key, '|')
+	if i <= 0 {
+		return "", 0, false
+	}
+	n, err := strconv.Atoi(key[i+1:])
+	if err != nil || n < 0 || n > 65535 {
+		return "", 0, false
+	}
+	return key[:i], uint16(n), true
 }

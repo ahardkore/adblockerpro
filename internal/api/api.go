@@ -4,6 +4,7 @@ package api
 import (
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ahardkore/adblockerpro/internal/auth"
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/devices"
@@ -25,6 +27,7 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/server"
 	"github.com/ahardkore/adblockerpro/internal/stats"
+	"github.com/ahardkore/adblockerpro/internal/tlsutil"
 	"github.com/ahardkore/adblockerpro/web"
 )
 
@@ -55,13 +58,24 @@ type Deps struct {
 // Server is the HTTP server for the dashboard and API.
 type Server struct {
 	Deps
-	mux  *http.ServeMux
-	http *http.Server
+	mux   *http.ServeMux
+	http  *http.Server
+	https *http.Server
+	// sessions holds dashboard logins; throttle slows password guessing.
+	sessions *auth.Sessions
+	throttle *auth.Throttle
+	// certFingerprint is shown in the UI when HTTPS is on.
+	certFingerprint string
 }
 
 // New wires up the routes.
 func New(d Deps) *Server {
-	s := &Server{Deps: d, mux: http.NewServeMux()}
+	s := &Server{
+		Deps:     d,
+		mux:      http.NewServeMux(),
+		sessions: auth.NewSessions(d.Config.SessionTTL()),
+		throttle: auth.NewThrottle(5, 5*time.Minute),
+	}
 	s.routes()
 	return s
 }
@@ -70,6 +84,7 @@ func (s *Server) routes() {
 	// Unauthenticated: health and login.
 	s.mux.HandleFunc("/api/health", s.handleHealth)
 	s.mux.HandleFunc("/api/login", s.handleLogin)
+	s.mux.HandleFunc("/api/logout", s.handleLogout)
 
 	// DNS-over-HTTPS is authenticated by nothing on purpose: it is a
 	// resolver endpoint, protected by the same client checks as UDP DNS.
@@ -85,6 +100,8 @@ func (s *Server) routes() {
 		"/api/dhcp":             s.handleDHCP,
 		"/api/dhcp/reservation": s.handleDHCPReservation,
 		"/api/devices/suggest":  s.handleDevicesSuggest,
+		"/api/devices/report":   s.handleDeviceReport,
+		"/api/devices/clients":  s.handleDeviceClients,
 		"/api/backup":           s.handleBackup,
 		"/api/restore":          s.handleRestore,
 		"/api/queries":          s.handleQueries,
@@ -96,6 +113,8 @@ func (s *Server) routes() {
 		"/api/settings":         s.handleSettings,
 		"/api/control":          s.handleControl,
 		"/api/check":            s.handleCheck,
+		"/api/password":         s.handlePassword,
+		"/api/sessions":         s.handleSessions,
 	}
 	for path, h := range api {
 		s.mux.Handle(path, s.auth(h))
@@ -122,13 +141,20 @@ func noCacheHTML(h http.Handler) http.Handler {
 func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	s.http = &http.Server{
 		Addr:              addr,
-		Handler:           s.logRequests(s.mux),
+		Handler:           s.redirectToTLS(s.logRequests(s.mux)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       90 * time.Second,
 	}
-	errCh := make(chan error, 1)
+	errCh := make(chan error, 2)
+
+	if s.Config.Web.TLS.Enabled {
+		if err := s.startTLS(errCh); err != nil {
+			return err
+		}
+	}
+
 	go func() {
 		s.Log.Info("dashboard listening", "addr", addr)
 		err := s.http.ListenAndServe()
@@ -144,8 +170,69 @@ func (s *Server) ListenAndServe(ctx context.Context, addr string) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
+		if s.https != nil {
+			_ = s.https.Shutdown(shutdownCtx)
+		}
 		return s.http.Shutdown(shutdownCtx)
 	}
+}
+
+// startTLS brings up the HTTPS listener, generating a self-signed
+// certificate in DataDir when none was supplied.
+func (s *Server) startTLS(errCh chan error) error {
+	cert, key := s.Config.Web.TLS.CertFile, s.Config.Web.TLS.KeyFile
+	if cert == "" || key == "" {
+		var err error
+		cert, key, err = tlsutil.EnsureSelfSigned(s.Config.DataDir, nil)
+		if err != nil {
+			return fmt.Errorf("generate certificate: %w", err)
+		}
+		s.Log.Info("using self-signed dashboard certificate", "cert", cert)
+	}
+	if fp, err := tlsutil.Fingerprint(cert); err == nil {
+		s.certFingerprint = fp
+	}
+
+	handler := http.Handler(s.logRequests(s.mux))
+	s.https = &http.Server{
+		Addr:              s.Config.WebTLSAddr(),
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       90 * time.Second,
+		TLSConfig:         &tls.Config{MinVersion: tls.VersionTLS12},
+	}
+	go func() {
+		s.Log.Info("dashboard listening (https)", "addr", s.https.Addr, "fingerprint", s.certFingerprint)
+		err := s.https.ListenAndServeTLS(cert, key)
+		if err != nil && err != http.ErrServerClosed {
+			errCh <- err
+		}
+	}()
+	return nil
+}
+
+// redirectToTLS sends plain HTTP browsers to the HTTPS port. API clients
+// using a token are left alone so scripts do not break.
+func (s *Server) redirectToTLS(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.Config.Web.TLS.Enabled || !s.Config.Web.TLS.RedirectHTTP ||
+			r.TLS != nil || strings.HasPrefix(r.URL.Path, "/dns-query") {
+			h.ServeHTTP(w, r)
+			return
+		}
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+		port := s.Config.Web.TLS.Port
+		if port == 0 {
+			port = 8443
+		}
+		target := fmt.Sprintf("https://%s:%d%s", host, port, r.URL.RequestURI())
+		http.Redirect(w, r, target, http.StatusTemporaryRedirect)
+	})
 }
 
 func (s *Server) logRequests(h http.Handler) http.Handler {
@@ -159,14 +246,23 @@ func (s *Server) logRequests(h http.Handler) http.Handler {
 	})
 }
 
-// auth enforces the admin token when one is configured.
-func (s *Server) auth(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		token := s.Config.Web.AdminToken
-		if token == "" {
-			h(w, r)
-			return
-		}
+// authRequired reports whether any credential is configured. With neither a
+// token nor a password the box is open, which is the out-of-the-box state on
+// a trusted home LAN.
+func (s *Server) authRequired() bool {
+	return s.Config.Web.AdminToken != "" || s.Config.Web.AdminPasswordHash != ""
+}
+
+// authenticated accepts either the machine token (header or query) or a
+// dashboard session cookie.
+func (s *Server) authenticated(r *http.Request) bool {
+	if !s.authRequired() {
+		return true
+	}
+	if c, err := r.Cookie(sessionCookie); err == nil && s.sessions.Valid(c.Value) {
+		return true
+	}
+	if token := s.Config.Web.AdminToken; token != "" {
 		provided := r.Header.Get("X-API-Key")
 		if provided == "" {
 			if b := r.Header.Get("Authorization"); strings.HasPrefix(b, "Bearer ") {
@@ -178,7 +274,17 @@ func (s *Server) auth(h http.HandlerFunc) http.Handler {
 				provided = c.Value
 			}
 		}
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(token)) != 1 {
+		if provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1 {
+			return true
+		}
+	}
+	return false
+}
+
+// auth enforces credentials when any are configured.
+func (s *Server) auth(h http.HandlerFunc) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.authenticated(r) {
 			writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			return
 		}
@@ -209,8 +315,20 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 		"version":  Version,
 		"uptime_s": int(s.DNS.Uptime().Seconds()),
 		"domains":  s.Engine.Domains().Len(),
-		"auth":     s.Config.Web.AdminToken != "",
+		"auth":     s.authRequired(),
+		"tls":      s.Config.Web.TLS.Enabled,
 	})
+}
+
+const sessionCookie = "abp_session"
+
+// clientIP is the throttling key: the peer address without its port.
+func clientIP(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
 }
 
 func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
@@ -219,26 +337,123 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var body struct {
-		Token string `json:"token"`
+		Password string `json:"password"`
+		Token    string `json:"token"`
 	}
 	if err := decode(r, &body); err != nil {
 		badRequest(w, "invalid body")
 		return
 	}
-	token := s.Config.Web.AdminToken
-	if token == "" || subtle.ConstantTimeCompare([]byte(body.Token), []byte(token)) != 1 {
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+	ip := clientIP(r)
+	if ok, wait := s.throttle.Allowed(ip); !ok {
+		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"error":     "too many attempts",
+			"retry_in_s": int(wait.Seconds()) + 1,
+		})
+		return
+	}
+
+	ok := false
+	if hash := s.Config.Web.AdminPasswordHash; hash != "" && body.Password != "" {
+		ok = auth.VerifyPassword(hash, body.Password)
+	}
+	if !ok {
+		if token := s.Config.Web.AdminToken; token != "" {
+			supplied := body.Token
+			if supplied == "" {
+				supplied = body.Password
+			}
+			ok = supplied != "" && subtle.ConstantTimeCompare([]byte(supplied), []byte(token)) == 1
+		}
+	}
+	if !ok {
+		s.throttle.Fail(ip)
+		s.Log.Warn("failed dashboard login", "client", ip)
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+		return
+	}
+
+	s.throttle.Succeed(ip)
+	id, expires, err := s.sessions.Create(ip)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name:     "abp_token",
-		Value:    token,
+		Name:     sessionCookie,
+		Value:    id,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   r.TLS != nil,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int((30 * 24 * time.Hour).Seconds()),
+		MaxAge:   int(time.Until(expires).Seconds()),
 	})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "expires": expires})
+}
+
+func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if c, err := r.Cookie(sessionCookie); err == nil {
+		s.sessions.Revoke(c.Value)
+	}
+	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
+	http.SetCookie(w, &http.Cookie{Name: "abp_token", Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// handlePassword sets or clears the dashboard password. Changing it logs
+// every other browser out.
+func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		badRequest(w, "POST required")
+		return
+	}
+	var body struct {
+		Current string `json:"current"`
+		New     string `json:"new"`
+	}
+	if err := decode(r, &body); err != nil {
+		badRequest(w, "invalid body")
+		return
+	}
+	cur := s.Config.Web.AdminPasswordHash
+	if cur != "" && !auth.VerifyPassword(cur, body.Current) {
+		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "current password is wrong"})
+		return
+	}
+	if body.New == "" {
+		s.Config.Web.AdminPasswordHash = ""
+	} else {
+		hash, err := auth.HashPassword(body.New)
+		if err != nil {
+			badRequest(w, err.Error())
+			return
+		}
+		s.Config.Web.AdminPasswordHash = hash
+	}
+	if err := s.Config.Save(); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	s.sessions.RevokeAll()
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":      "ok",
+		"password_set": s.Config.Web.AdminPasswordHash != "",
+	})
+}
+
+// handleSessions reports and optionally clears dashboard logins.
+func (s *Server) handleSessions(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodDelete {
+		s.sessions.RevokeAll()
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"sessions":     s.sessions.Count(),
+		"password_set": s.Config.Web.AdminPasswordHash != "",
+		"token_set":    s.Config.Web.AdminToken != "",
+		"tls":          s.Config.Web.TLS.Enabled,
+		"fingerprint":  s.certFingerprint,
+	})
 }
 
 func (s *Server) handleSummary(w http.ResponseWriter, r *http.Request) {

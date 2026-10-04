@@ -545,3 +545,73 @@ func (s *Server) handleDevicesSuggest(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(out, func(i, j int) bool { return out[i].Queries > out[j].Queries })
 	writeJSON(w, http.StatusOK, map[string]any{"suggestions": out})
 }
+
+// handleDeviceReport is the per-device drill-down: everything the history
+// store knows about one client address over a window of days.
+//
+// GET /api/devices/report?client=192.168.1.42&days=7
+func (s *Server) handleDeviceReport(w http.ResponseWriter, r *http.Request) {
+	client := strings.TrimSpace(r.URL.Query().Get("client"))
+	if client == "" {
+		badRequest(w, "client is required")
+		return
+	}
+	if s.History == nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled": false,
+			"error":   "history is disabled; enable history in settings to get per-device reports",
+		})
+		return
+	}
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 || days > 365 {
+		days = 7
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days).Truncate(time.Hour)
+
+	report := s.History.ClientReport(client, since, 15)
+	pol := s.Devices.Lookup(net.ParseIP(client))
+	if report.Device == "" {
+		report.Device = pol.Name
+	}
+	policy := map[string]any{
+		"name":   pol.Name,
+		"group":  pol.Group,
+		"paused": pol.Paused,
+		"known":  pol.Known,
+		"match":  pol.MatchedBy,
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"enabled": true,
+		"days":    days,
+		"report":  report,
+		"policy":  policy,
+	})
+}
+
+// handleDeviceClients lists the addresses the history store has seen, so the
+// dashboard can offer a picker for the drill-down.
+func (s *Server) handleDeviceClients(w http.ResponseWriter, r *http.Request) {
+	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
+	if days <= 0 || days > 365 {
+		days = 7
+	}
+	if s.History == nil {
+		writeJSON(w, http.StatusOK, map[string]any{"enabled": false, "clients": []any{}})
+		return
+	}
+	since := time.Now().UTC().AddDate(0, 0, -days)
+	type row struct {
+		Client  string `json:"client"`
+		Name    string `json:"name,omitempty"`
+		Queries int64  `json:"queries"`
+	}
+	items := s.History.Clients(since)
+	out := make([]row, 0, len(items))
+	for _, it := range items {
+		rr := row{Client: it.Name, Queries: it.Count}
+		rr.Name = s.Devices.Lookup(net.ParseIP(it.Name)).Name
+		out = append(out, rr)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "days": days, "clients": out})
+}
