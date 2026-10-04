@@ -143,9 +143,37 @@ sudo ./deploy/install.sh --local
 No router control? Set the Pi as the DNS server manually in each device's
 network settings.
 
+## Website
+
+A four-page static site lives in [`site/`](site/): a landing page, the
+hardware shopping list, the eight-step setup walkthrough and a help/FAQ page.
+It has no build step — open `index.html`, or publish the folder anywhere.
+
+`.github/workflows/pages.yml` deploys it to GitHub Pages on pushes to `main`
+(turn it on once under **Settings → Pages → Source: GitHub Actions**).
+
+**Affiliate links live in one file:** [`site/products.json`](site/products.json).
+Put your Amazon Associates tag in `affiliate_tag` and the product URLs in each
+`url` field; the tag is appended automatically, links are rendered with
+`rel="nofollow sponsored noopener"`, and the disclosure line is printed under
+every kit. Products with an empty `url` show a greyed-out "link coming soon"
+button, so a partly filled list still looks deliberate. See
+[`site/README.md`](site/README.md).
+
 ## Dashboard
 
 `http://<pi-ip>:8080`
+
+First time you open it, a **setup wizard** walks you through the whole thing:
+pick a protection level (Gentle / Balanced / Strict, which just swaps the
+blocklists), read off the exact address to type into your router — with
+per-brand instructions for a dozen common routers — press **Run the test**,
+and set a dashboard password. The test checks four things and says in plain
+words what to do about anything that fails. Re-run it any time from
+**Settings → Run setup again**.
+
+Every tab carries a one-paragraph plain-English explanation, and the **? Help**
+button opens a glossary plus a "something stopped working" checklist.
 
 - **Overview** — queries, block rate, cache hit rate, activity chart, and a
   "is this domain blocked?" checker for when an app misbehaves.
