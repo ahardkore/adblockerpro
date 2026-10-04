@@ -851,5 +851,166 @@
     } catch (err) { $("#login-error").textContent = err.message; }
   });
 
+
+  /* ---------- first-run wizard ---------- */
+
+  // The wizard is the difference between "a Raspberry Pi project" and
+  // "a thing my parents can set up", so it does the thinking: it picks the
+  // address to type into the router, downloads the lists, and tells the
+  // user in plain words whether it worked.
+
+  let wizStep = 0;
+  let wizState = null;
+  const WIZ_LAST = 4;
+
+  async function openWizard(force) {
+    try {
+      wizState = await api("/api/setup");
+    } catch (_) { return; }
+    if (wizState.completed && !force) return;
+    wizStep = 0;
+    renderWizard();
+    $("#wizard").classList.remove("hidden");
+  }
+
+  function renderWizard() {
+    $$("#wiz-steps li").forEach((li) => {
+      const n = Number(li.dataset.step);
+      li.classList.toggle("on", n === wizStep);
+      li.classList.toggle("done", n < wizStep);
+    });
+    $$(".wiz-pane").forEach((p) => p.classList.toggle("on", Number(p.dataset.pane) === wizStep));
+
+    const titles = [
+      ["Welcome", "Five minutes and the whole house is ad-free."],
+      ["Step 1 of 4 — protection level", "How strict should the filter be?"],
+      ["Step 2 of 4 — your router", "One setting sends every device through the Pi."],
+      ["Step 3 of 4 — test it", "Let's make sure it is really working."],
+      ["Step 4 of 4 — password", "Stop anyone on the Wi-Fi switching it off."],
+    ];
+    $("#wiz-title").textContent = titles[wizStep][0];
+    $("#wiz-sub").textContent = titles[wizStep][1];
+    $("#wiz-back").classList.toggle("hidden", wizStep === 0);
+    $("#wiz-next").textContent = wizStep === 0 ? "Get started" : (wizStep === WIZ_LAST ? "Finish" : "Next");
+
+    if (wizStep === 1) renderPresets();
+    if (wizStep === 2) {
+      const ip = wizState.lan_ip || "the Pi's IP address";
+      $("#wiz-ip").textContent = ip;
+      const parts = String(wizState.lan_ip || "").split(".");
+      $("#wiz-gateway").textContent = parts.length === 4 ? `${parts[0]}.${parts[1]}.${parts[2]}.1` : "192.168.1.1";
+    }
+  }
+
+  function renderPresets() {
+    $("#wiz-presets").innerHTML = (wizState.presets || []).map((p) => `
+      <label class="preset ${p.active ? "chosen" : ""}">
+        <input type="radio" name="preset" value="${esc(p.id)}" ${p.active || p.id === "balanced" ? "checked" : ""} />
+        <div>
+          <b>${esc(p.title)}</b>
+          <span class="preset-sum">${esc(p.summary)}</span>
+          <span class="preset-detail">${esc(p.detail)}</span>
+        </div>
+      </label>`).join("");
+    const st = wizState.steps || {};
+    $("#wiz-preset-status").textContent = st.domains
+      ? `${compact(st.domains)} domains loaded right now.`
+      : "No lists loaded yet — choosing one downloads it (a minute or two).";
+  }
+
+  async function applyPreset() {
+    const chosen = document.querySelector("input[name=preset]:checked");
+    if (!chosen) return;
+    $("#wiz-preset-status").textContent = "Downloading lists…";
+    wizState = await api("/api/setup", { method: "POST", body: JSON.stringify({ action: "preset", preset: chosen.value }) });
+    // Poll until the domain count moves, so the user sees it finish.
+    let tries = 0;
+    const poll = setInterval(async () => {
+      tries++;
+      try {
+        wizState = await api("/api/setup");
+        const n = (wizState.steps || {}).domains || 0;
+        $("#wiz-preset-status").textContent = n
+          ? `${compact(n)} domains loaded.`
+          : "Downloading lists…";
+        if (n > 1000 || tries > 30) clearInterval(poll);
+      } catch (_) { clearInterval(poll); }
+    }, 4000);
+  }
+
+  async function runSetupTest() {
+    const host = $("#wiz-test-results");
+    host.innerHTML = `<p class="muted">Testing…</p>`;
+    try {
+      const d = await api("/api/setup/test", { method: "POST" });
+      host.innerHTML = (d.checks || []).map((c) => `
+        <div class="check ${c.ok ? "good" : "bad"}">
+          <span class="check-ico">${c.ok ? "✅" : "⚠️"}</span>
+          <div>
+            <b>${esc(c.title)}</b>
+            <span class="muted">${esc(c.detail)}</span>
+            ${c.ok ? "" : `<span class="fix">${esc(c.hint || "")}</span>`}
+          </div>
+        </div>`).join("") +
+        (d.ok
+          ? `<p class="allgood">🎉 Everything checks out — your network is being filtered.</p>`
+          : `<p class="muted">Fix the warnings above and press the test again. The last one often just needs a device reboot.</p>`);
+    } catch (err) {
+      host.innerHTML = `<p class="error">${esc(err.message)}</p>`;
+    }
+  }
+
+  async function finishWizard() {
+    const pw = $("#wiz-pass").value;
+    if (pw) {
+      if (pw.length < 8) { $("#wiz-pass-error").textContent = "Use at least 8 characters."; return; }
+      if (pw !== $("#wiz-pass2").value) { $("#wiz-pass-error").textContent = "The two passwords are different."; return; }
+      await api("/api/setup", { method: "POST", body: JSON.stringify({ action: "password", password: pw }) });
+    }
+    await api("/api/setup", { method: "POST", body: JSON.stringify({ action: "complete" }) });
+    $("#wizard").classList.add("hidden");
+    toast(pw ? "All set — remember your password" : "All set");
+    refresh();
+  }
+
+  $("#wiz-next").addEventListener("click", async () => {
+    try {
+      if (wizStep === 1) await applyPreset();
+      if (wizStep === WIZ_LAST) { await finishWizard(); return; }
+      wizStep = Math.min(WIZ_LAST, wizStep + 1);
+      renderWizard();
+      if (wizStep === 3) runSetupTest();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#wiz-back").addEventListener("click", () => {
+    wizStep = Math.max(0, wizStep - 1);
+    renderWizard();
+  });
+
+  $("#wiz-skip").addEventListener("click", async () => {
+    try { await api("/api/setup", { method: "POST", body: JSON.stringify({ action: "complete" }) }); } catch (_) {}
+    $("#wizard").classList.add("hidden");
+  });
+
+  $("#wiz-test").addEventListener("click", runSetupTest);
+
+  $("#wiz-copy").addEventListener("click", async () => {
+    const ip = $("#wiz-ip").textContent;
+    try { await navigator.clipboard.writeText(ip); toast("Copied " + ip); }
+    catch (_) { toast("Copy it by hand: " + ip); }
+  });
+
+  $("#btn-rerun-setup").addEventListener("click", () => openWizard(true));
+
+  /* ---------- help drawer ---------- */
+
+  $("#btn-help").addEventListener("click", () => $("#help-drawer").classList.toggle("hidden"));
+  $("#help-close").addEventListener("click", () => $("#help-drawer").classList.add("hidden"));
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape") $("#help-drawer").classList.add("hidden");
+  });
+
   selectTab("overview");
+  openWizard(false);
 })();

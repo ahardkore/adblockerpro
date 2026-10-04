@@ -115,6 +115,8 @@ func (s *Server) routes() {
 		"/api/check":            s.handleCheck,
 		"/api/password":         s.handlePassword,
 		"/api/sessions":         s.handleSessions,
+		"/api/setup":            s.handleSetup,
+		"/api/setup/test":       s.handleSetupTest,
 	}
 	for path, h := range api {
 		s.mux.Handle(path, s.auth(h))

@@ -161,6 +161,9 @@ type Config struct {
 	DHCP dhcp.Config `json:"dhcp"`
 	// Schedules are the time-based filtering windows.
 	Schedules []schedule.Schedule `json:"schedules"`
+	// SetupComplete is set once someone has finished the first-run wizard,
+	// so the dashboard stops greeting them with it.
+	SetupComplete bool `json:"setup_complete"`
 
 	path string
 	mu   sync.Mutex

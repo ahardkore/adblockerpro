@@ -89,6 +89,8 @@ state = {
         "request_dnssec": True, "doh_server": True, "prefetch": True,
         "conditional_forward": [{"domain": "home.arpa", "upstream": "192.168.1.1"}],
     },
+    "setup_complete": False,
+    "preset": "balanced",
     "web": {
         "listen": "0.0.0.0", "port": 8080, "session_hours": 168,
         "password_set": False, "token_set": False,
@@ -98,6 +100,33 @@ state = {
 }
 for ls in state["lists"]:
     ls["last_updated"] = (datetime.now(timezone.utc) - timedelta(hours=3)).isoformat()
+
+
+PRESETS = [
+    {"id": "gentle", "title": "Gentle", "summary": "Blocks the obvious ads. Nothing ever breaks.",
+     "detail": "Two conservative lists, roughly 150 000 domains.", "lists": 2},
+    {"id": "balanced", "title": "Balanced", "summary": "Ads, trackers and smart-TV telemetry. Recommended.",
+     "detail": "Five well-maintained lists, around 300 000 domains.", "lists": 5},
+    {"id": "strict", "title": "Strict", "summary": "Everything above plus aggressive tracking lists.",
+     "detail": "Around a million domains; expect to allow the odd domain by hand.", "lists": 6},
+]
+
+
+def setup_state() -> dict:
+    return {
+        "completed": state["setup_complete"],
+        "lan_ip": "192.168.1.2",
+        "dns_port": 53,
+        "web_port": 8080,
+        "version": "preview",
+        "uptime_s": int(time.time() - START),
+        "steps": {
+            "lists_ready": True, "domains": 312480, "last_update": now_iso(),
+            "password_set": state["web"]["password_set"], "other_clients": 6,
+            "queries": 18432, "blocked": 5120, "dhcp_enabled": False, "https": False,
+        },
+        "presets": [dict(p, active=p["id"] == state["preset"]) for p in PRESETS],
+    }
 
 
 def now_iso() -> str:
@@ -321,6 +350,8 @@ class Handler(SimpleHTTPRequestHandler):
                       for i, (ip, name) in enumerate(DEVICES)]
             return self.send_json({"config": state["dhcp"], "leases": leases,
                                    "enabled": state["dhcp"]["enabled"], "count": len(leases)})
+        if url.path == "/api/setup":
+            return self.send_json(setup_state())
         if url.path == "/api/health":
             return self.send_json({"status": "ok", "version": "preview"})
         return self.send_json({"error": "not found"}, 404)
@@ -383,6 +414,25 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"status": "restored", "rules": len(state["rules"]),
                                    "devices": len(state["devices"]), "schedules": len(state["schedules"]),
                                    "lists": len(state["lists"])})
+        if url.path == "/api/setup":
+            action = data.get("action")
+            if action == "preset":
+                state["preset"] = data.get("preset") or "balanced"
+            elif action == "password":
+                state["web"]["password_set"] = bool(data.get("password"))
+            elif action == "complete":
+                state["setup_complete"] = True
+            elif action == "reopen":
+                state["setup_complete"] = False
+            return self.send_json(setup_state())
+        if url.path == "/api/setup/test":
+            checks = [
+                {"id": "lists", "title": "Blocklists loaded", "ok": True, "detail": "312 480 domains in memory"},
+                {"id": "upstream", "title": "Internet lookups work", "ok": True, "detail": "2 upstream resolvers are healthy"},
+                {"id": "blocking", "title": "Ad domains are blocked", "ok": True, "detail": "test lookup of doubleclick.net"},
+                {"id": "clients", "title": "Your devices are using it", "ok": True, "detail": "6 devices have sent lookups in the last 24 hours"},
+            ]
+            return self.send_json({"ok": True, "checks": checks, "lan_ip": "192.168.1.2", "checked": now_iso()})
         if url.path == "/api/password":
             state["web"]["password_set"] = bool(data.get("new"))
             return self.send_json({"status": "ok", "password_set": state["web"]["password_set"]})
