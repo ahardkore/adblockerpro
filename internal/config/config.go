@@ -97,13 +97,13 @@ type LogConfig struct {
 
 // Config is the whole configuration document.
 type Config struct {
-	DataDir string            `json:"data_dir"`
-	DNS     DNSConfig         `json:"dns"`
-	Web     WebConfig         `json:"web"`
-	Lists   ListsConfig       `json:"lists"`
-	Rules   []blocklist.Rule  `json:"rules"`
-	Devices []Device          `json:"devices"`
-	Log     LogConfig         `json:"log"`
+	DataDir string           `json:"data_dir"`
+	DNS     DNSConfig        `json:"dns"`
+	Web     WebConfig        `json:"web"`
+	Lists   ListsConfig      `json:"lists"`
+	Rules   []blocklist.Rule `json:"rules"`
+	Devices []Device         `json:"devices"`
+	Log     LogConfig        `json:"log"`
 
 	path string
 	mu   sync.Mutex

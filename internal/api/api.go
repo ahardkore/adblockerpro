@@ -182,11 +182,11 @@ func decode(r *http.Request, v any) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":    "ok",
-		"version":   Version,
-		"uptime_s":  int(s.DNS.Uptime().Seconds()),
-		"domains":   s.Engine.Domains().Len(),
-		"auth":      s.Config.Web.AdminToken != "",
+		"status":   "ok",
+		"version":  Version,
+		"uptime_s": int(s.DNS.Uptime().Seconds()),
+		"domains":  s.Engine.Domains().Len(),
+		"auth":     s.Config.Web.AdminToken != "",
 	})
 }
 

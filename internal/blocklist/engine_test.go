@@ -6,9 +6,9 @@ func testEngine(t *testing.T) *Engine {
 	t.Helper()
 	e := New(true)
 	e.SetDomains(NewDomainSet(map[string]string{
-		"doubleclick.net":       "TestList",
-		"ads.example.com":       "TestList",
-		"analytics.tiktok.com":  "TestList",
+		"doubleclick.net":      "TestList",
+		"ads.example.com":      "TestList",
+		"analytics.tiktok.com": "TestList",
 	}))
 	return e
 }

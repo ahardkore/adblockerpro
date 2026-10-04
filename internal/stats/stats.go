@@ -50,15 +50,15 @@ type Entry struct {
 func (e Entry) Blocked() bool { return e.Status == StatusBlocked }
 
 type counterSnapshot struct {
-	Total   int64            `json:"total"`
-	Blocked int64            `json:"blocked"`
-	Cached  int64            `json:"cached"`
-	Errors  int64            `json:"errors"`
-	Domains map[string]int64 `json:"domains"`
-	Blocks  map[string]int64 `json:"blocks"`
-	Clients map[string]int64 `json:"clients"`
+	Total   int64             `json:"total"`
+	Blocked int64             `json:"blocked"`
+	Cached  int64             `json:"cached"`
+	Errors  int64             `json:"errors"`
+	Domains map[string]int64  `json:"domains"`
+	Blocks  map[string]int64  `json:"blocks"`
+	Clients map[string]int64  `json:"clients"`
 	Buckets map[string]bucket `json:"buckets"`
-	Saved   time.Time        `json:"saved"`
+	Saved   time.Time         `json:"saved"`
 }
 
 type bucket struct {
@@ -70,10 +70,10 @@ type bucket struct {
 type Collector struct {
 	mu sync.RWMutex
 
-	ring    []Entry
-	head    int
-	size    int
-	filled  bool
+	ring      []Entry
+	head      int
+	size      int
+	filled    bool
 	anonymize bool
 
 	total, blocked, cached, errors int64

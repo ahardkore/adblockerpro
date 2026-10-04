@@ -36,7 +36,7 @@ type Rule struct {
 
 // Decision is the outcome of evaluating a domain.
 type Decision struct {
-	Blocked bool   `json:"blocked"`
+	Blocked bool `json:"blocked"`
 	// Rule is the pattern or list entry that matched.
 	Rule string `json:"rule,omitempty"`
 	// Source names where the match came from: "allowlist", "denylist",

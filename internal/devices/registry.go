@@ -15,10 +15,10 @@ import (
 
 // Policy is the resolved policy for a client.
 type Policy struct {
-	Name     string
-	Group    string
-	Paused   bool
-	Known    bool
+	Name      string
+	Group     string
+	Paused    bool
+	Known     bool
 	MatchedBy string
 }
 

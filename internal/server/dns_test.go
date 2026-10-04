@@ -19,11 +19,11 @@ import (
 )
 
 type stubUpstream struct {
-	ip      string
-	ttl     uint32
-	err     error
-	calls   int
-	cname   string
+	ip    string
+	ttl   uint32
+	err   error
+	calls int
+	cname string
 }
 
 func (s *stubUpstream) Name() string { return "stub" }

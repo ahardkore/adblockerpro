@@ -36,11 +36,11 @@ type Deps struct {
 type DNS struct {
 	Deps
 
-	mu       sync.RWMutex
-	sink     dnsmsg.SinkholeMode
-	sinkV4   net.IP
-	sinkV6   net.IP
-	blockTTL uint32
+	mu         sync.RWMutex
+	sink       dnsmsg.SinkholeMode
+	sinkV4     net.IP
+	sinkV6     net.IP
+	blockTTL   uint32
 	blockHTTPS bool
 	cnameCheck bool
 	serveStale bool
