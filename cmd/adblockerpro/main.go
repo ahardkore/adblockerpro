@@ -237,6 +237,14 @@ func newLogger(level string) *slog.Logger {
 	return slog.New(h)
 }
 
+// envOr returns the environment variable value, or def when it is unset.
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 func fatal(format string, args ...any) {
 	fmt.Fprintf(os.Stderr, "adblockerpro: "+format+"\n", args...)
 	os.Exit(1)
