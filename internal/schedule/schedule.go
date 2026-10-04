@@ -29,9 +29,9 @@ const (
 
 // Schedule is one recurring window.
 type Schedule struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Enabled bool     `json:"enabled"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
 	// Group selects which devices it applies to; empty means every device.
 	Group string `json:"group,omitempty"`
 	// Days are mon,tue,wed,thu,fri,sat,sun — or the shorthands "all",

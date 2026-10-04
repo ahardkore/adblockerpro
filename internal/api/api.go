@@ -21,8 +21,8 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/dhcp"
 	"github.com/ahardkore/adblockerpro/internal/dnsmsg"
 	"github.com/ahardkore/adblockerpro/internal/history"
-	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/resolver"
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/server"
 	"github.com/ahardkore/adblockerpro/internal/stats"
 	"github.com/ahardkore/adblockerpro/web"
@@ -87,15 +87,15 @@ func (s *Server) routes() {
 		"/api/devices/suggest":  s.handleDevicesSuggest,
 		"/api/backup":           s.handleBackup,
 		"/api/restore":          s.handleRestore,
-		"/api/queries":      s.handleQueries,
-		"/api/lists":        s.handleLists,
-		"/api/lists/update": s.handleListsUpdate,
-		"/api/lists/toggle": s.handleListsToggle,
-		"/api/rules":        s.handleRules,
-		"/api/devices":      s.handleDevices,
-		"/api/settings":     s.handleSettings,
-		"/api/control":      s.handleControl,
-		"/api/check":        s.handleCheck,
+		"/api/queries":          s.handleQueries,
+		"/api/lists":            s.handleLists,
+		"/api/lists/update":     s.handleListsUpdate,
+		"/api/lists/toggle":     s.handleListsToggle,
+		"/api/rules":            s.handleRules,
+		"/api/devices":          s.handleDevices,
+		"/api/settings":         s.handleSettings,
+		"/api/control":          s.handleControl,
+		"/api/check":            s.handleCheck,
 	}
 	for path, h := range api {
 		s.mux.Handle(path, s.auth(h))

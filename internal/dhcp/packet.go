@@ -26,23 +26,23 @@ const (
 
 // Option codes we read or write.
 const (
-	OptSubnetMask     byte = 1
-	OptRouter         byte = 3
-	OptDNS            byte = 6
-	OptHostname       byte = 12
-	OptDomainName     byte = 15
-	OptBroadcast      byte = 28
-	OptRequestedIP    byte = 50
-	OptLeaseTime      byte = 51
-	OptMessageType    byte = 53
-	OptServerID       byte = 54
-	OptParamRequest   byte = 55
-	OptRenewalTime    byte = 58
-	OptRebindingTime  byte = 59
-	OptVendorClass    byte = 60
-	OptClientID       byte = 61
-	OptClientFQDN     byte = 81
-	OptEnd            byte = 255
+	OptSubnetMask    byte = 1
+	OptRouter        byte = 3
+	OptDNS           byte = 6
+	OptHostname      byte = 12
+	OptDomainName    byte = 15
+	OptBroadcast     byte = 28
+	OptRequestedIP   byte = 50
+	OptLeaseTime     byte = 51
+	OptMessageType   byte = 53
+	OptServerID      byte = 54
+	OptParamRequest  byte = 55
+	OptRenewalTime   byte = 58
+	OptRebindingTime byte = 59
+	OptVendorClass   byte = 60
+	OptClientID      byte = 61
+	OptClientFQDN    byte = 81
+	OptEnd           byte = 255
 )
 
 const (

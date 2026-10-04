@@ -657,9 +657,9 @@ func WithDNSSEC(query []byte, udpSize uint16) []byte {
 		0x00, // root name
 	)
 	out = binary.BigEndian.AppendUint16(out, TypeOPT)
-	out = binary.BigEndian.AppendUint16(out, udpSize)       // class = UDP payload size
-	out = binary.BigEndian.AppendUint32(out, 0x00008000)    // extended rcode/version + DO
-	out = binary.BigEndian.AppendUint16(out, 0)             // rdlength
+	out = binary.BigEndian.AppendUint16(out, udpSize)    // class = UDP payload size
+	out = binary.BigEndian.AppendUint32(out, 0x00008000) // extended rcode/version + DO
+	out = binary.BigEndian.AppendUint16(out, 0)          // rdlength
 	binary.BigEndian.PutUint16(out[10:12], h.ARCount+1)
 	return out
 }

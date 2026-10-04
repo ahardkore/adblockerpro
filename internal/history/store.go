@@ -58,9 +58,9 @@ type Filter struct {
 type Page struct {
 	Records []Record `json:"records"`
 	Total   int      `json:"total"`
-	Offset  int       `json:"offset"`
-	Limit   int       `json:"limit"`
-	HasMore bool      `json:"has_more"`
+	Offset  int      `json:"offset"`
+	Limit   int      `json:"limit"`
+	HasMore bool     `json:"has_more"`
 }
 
 // DayStat is a daily rollup.
