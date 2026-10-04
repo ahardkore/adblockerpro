@@ -120,8 +120,9 @@ func (c *Cache) Get(key string, allowStale bool) (msg []byte, stale bool, ok boo
 	now := time.Now()
 	expired := now.After(e.expires)
 	if expired && !allowStale {
-		c.order.Remove(el)
-		delete(c.items, key)
+		// Keep the entry: if every upstream turns out to be down the caller
+		// comes straight back with allowStale set, and an expired answer
+		// beats no answer at all. The LRU reclaims it eventually.
 		c.misses++
 		return nil, false, false
 	}
