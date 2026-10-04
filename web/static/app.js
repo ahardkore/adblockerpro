@@ -238,6 +238,85 @@
       </tr>`).join("") || `<tr><td colspan="6" class="muted">nothing has queried this resolver yet</td></tr>`;
   }
 
+  /* ---------- device drill-down ---------- */
+
+  let reportClient = "";
+
+  async function loadReportClients() {
+    const d = await api("/api/devices/clients?days=" + ($("#report-days").value || 7)).catch(() => null);
+    if (!d || !d.enabled) return;
+    const sel = $("#report-client");
+    const current = sel.value;
+    sel.innerHTML = `<option value="">pick a device…</option>` +
+      (d.clients || []).map((c) => {
+        const label = c.name ? `${c.name} (${c.client})` : c.client;
+        return `<option value="${esc(c.client)}">${esc(label)} — ${compact(c.queries)}</option>`;
+      }).join("");
+    sel.value = current || reportClient || "";
+  }
+
+  async function loadDeviceReport() {
+    if (!reportClient) {
+      $("#report-body").classList.add("hidden");
+      $("#report-empty").classList.remove("hidden");
+      return;
+    }
+    const days = $("#report-days").value || 7;
+    const d = await api(`/api/devices/report?client=${encodeURIComponent(reportClient)}&days=${days}`);
+    if (!d.enabled) {
+      $("#report-empty").textContent = d.error || "history is disabled";
+      $("#report-empty").classList.remove("hidden");
+      $("#report-body").classList.add("hidden");
+      return;
+    }
+    const r = d.report || {};
+    const p = d.policy || {};
+    $("#report-empty").classList.add("hidden");
+    $("#report-body").classList.remove("hidden");
+    $("#rep-total").textContent = compact(r.total || 0);
+    $("#rep-window").textContent = `last ${d.days} days`;
+    $("#rep-blocked").textContent = compact(r.blocked || 0);
+    $("#rep-ratio").textContent = `${(r.block_ratio || 0).toFixed(1)}% of its traffic`;
+    $("#rep-cached").textContent = compact(r.cached || 0);
+    $("#rep-latency").textContent = `${(r.avg_ms || 0).toFixed(1)} ms average`;
+    $("#rep-policy").textContent = p.paused ? "unfiltered" : (p.group || "default");
+    $("#rep-seen").textContent = r.last_seen ? `last seen ${ago(r.last_seen)}` : "";
+    $("#rep-top").innerHTML = miniRows(r.top_domains);
+    $("#rep-blocked-table").innerHTML = miniRows(r.top_blocked);
+    drawHourly(r.hourly || [], r.blocked_hourly || []);
+  }
+
+  function miniRows(items) {
+    if (!items || !items.length) return `<tr><td class="muted">nothing recorded</td></tr>`;
+    return items.map((i) => `<tr><td class="domain">${esc(i.name)}</td><td class="num">${compact(i.count)}</td></tr>`).join("");
+  }
+
+  // drawHourly plots the device's day: total queries per UTC hour with the
+  // blocked share on top, which makes "the TV phones home at 3am" obvious.
+  function drawHourly(total, blocked) {
+    const host = $("#rep-chart");
+    if (!total.length) { host.innerHTML = ""; return; }
+    const w = Math.max(host.clientWidth, 320), h = 150, pad = 22;
+    const max = Math.max(1, ...total);
+    const bw = (w - pad * 2) / total.length;
+    let bars = "";
+    total.forEach((v, i) => {
+      const x = pad + i * bw;
+      const th = ((h - pad * 2) * v) / max;
+      const bh = ((h - pad * 2) * (blocked[i] || 0)) / max;
+      const wd = Math.max(1, bw - 3);
+      bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - th).toFixed(1)}" width="${wd.toFixed(1)}" height="${th.toFixed(1)}" fill="#60a5fa" opacity=".5" rx="2"><title>${i}:00 UTC — ${v} queries, ${blocked[i] || 0} blocked</title></rect>`;
+      if (bh > 0) bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - bh).toFixed(1)}" width="${wd.toFixed(1)}" height="${bh.toFixed(1)}" fill="#f87171" rx="2"/>`;
+    });
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#243057"/>
+      ${bars}
+      <text x="${pad}" y="${h - 6}" fill="#8d9ac4" font-size="11">00:00 UTC</text>
+      <text x="${w - pad}" y="${h - 6}" fill="#8d9ac4" font-size="11" text-anchor="end">23:00 UTC</text>
+      <text x="${pad}" y="14" fill="#8d9ac4" font-size="11">peak ${max}/hour</text>
+    </svg>`;
+  }
+
   /* ---------- settings ---------- */
 
   async function loadSettings() {
@@ -261,7 +340,27 @@
     $("#set-dnssec").checked = !!dns.request_dnssec;
     $("#set-doh-server").checked = !!dns.doh_server;
     $("#set-forward").value = (dns.conditional_forward || []).map((f) => `${f.domain}=${f.upstream}`).join("\n");
+    const web = d.web || {};
+    const tls = web.tls || {};
+    $("#set-prefetch").checked = !!dns.prefetch;
+    $("#set-tls").checked = !!tls.enabled;
+    $("#set-tls-port").value = tls.port || 8443;
+    $("#set-tls-redirect").checked = !!tls.redirect_http;
     window.__dns = dns;
+    window.__web = web;
+    loadSecurityState();
+  }
+
+  async function loadSecurityState() {
+    const d = await api("/api/sessions").catch(() => null);
+    if (!d) return;
+    const bits = [];
+    bits.push(d.password_set ? "password set" : "no password — the dashboard is open");
+    if (d.token_set) bits.push("API token set");
+    bits.push(d.tls ? "HTTPS on" : "HTTP only");
+    bits.push(`${d.sessions} active session${d.sessions === 1 ? "" : "s"}`);
+    if (d.fingerprint) bits.push(`cert ${d.fingerprint.slice(0, 17)}…`);
+    $("#security-state").textContent = bits.join(" · ");
   }
 
   const lines = (sel) => $(sel).value.split("\n").map((s) => s.trim()).filter(Boolean);
@@ -392,7 +491,7 @@
     dhcp: loadDHCP,
     lists: loadLists,
     rules: loadRules,
-    devices: loadDevices,
+    devices: async () => { await loadDevices(); await loadReportClients(); await loadDeviceReport(); },
     settings: loadSettings,
   };
 
@@ -521,6 +620,7 @@
       block_ttl: Number($("#set-blockttl").value),
       allowed_clients: lines("#set-allowed"),
       request_dnssec: $("#set-dnssec").checked,
+      prefetch: $("#set-prefetch").checked,
       doh_server: $("#set-doh-server").checked,
       conditional_forward: lines("#set-forward").map((l) => {
         const [domain, upstream] = l.split("=");
@@ -673,15 +773,78 @@
     e.target.value = "";
   });
 
+  /* ---------- device report controls ---------- */
+
+  $("#report-client").addEventListener("change", (e) => {
+    reportClient = e.target.value;
+    loadDeviceReport().catch((err) => toast(err.message, true));
+  });
+  $("#report-days").addEventListener("change", () => {
+    loadReportClients().then(loadDeviceReport).catch(() => {});
+  });
+
+  /* ---------- security ---------- */
+
+  $("#password-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = $("#password-msg");
+    msg.textContent = "";
+    const next = $("#pw-new").value;
+    if (next && next !== $("#pw-repeat").value) {
+      msg.textContent = "the two new passwords do not match";
+      return;
+    }
+    try {
+      // Web settings first, so a failed password change does not lose them.
+      const web = Object.assign({}, window.__web || {}, {
+        tls: {
+          enabled: $("#set-tls").checked,
+          port: Number($("#set-tls-port").value) || 8443,
+          redirect_http: $("#set-tls-redirect").checked,
+          cert_file: (window.__web && window.__web.tls && window.__web.tls.cert_file) || "",
+          key_file: (window.__web && window.__web.tls && window.__web.tls.key_file) || "",
+        },
+      });
+      await api("/api/settings", { method: "PUT", body: JSON.stringify({ web }) });
+      if (next || $("#pw-current").value) {
+        await api("/api/password", {
+          method: "POST",
+          body: JSON.stringify({ current: $("#pw-current").value, new: next }),
+        });
+        $("#pw-current").value = $("#pw-new").value = $("#pw-repeat").value = "";
+        toast(next ? "Password updated — other sessions signed out" : "Password cleared");
+      } else {
+        toast("Security settings saved");
+      }
+      if ($("#set-tls").checked) {
+        msg.textContent = "HTTPS takes effect after a restart: sudo systemctl restart adblockerpro";
+      }
+      loadSettings();
+    } catch (err) { msg.textContent = err.message; }
+  });
+
+  $("#btn-logout").addEventListener("click", async () => {
+    await fetch("/api/logout", { method: "POST", credentials: "same-origin" });
+    location.reload();
+  });
+
+  $("#btn-logout-all").addEventListener("click", async () => {
+    try {
+      await api("/api/sessions", { method: "DELETE" });
+      location.reload();
+    } catch (err) { toast(err.message, true); }
+  });
+
   $("#login-form").addEventListener("submit", async (e) => {
     e.preventDefault();
     try {
       const res = await fetch("/api/login", {
         method: "POST", credentials: "same-origin",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: $("#login-token").value }),
+        body: JSON.stringify({ password: $("#login-token").value, token: $("#login-token").value }),
       });
-      if (!res.ok) throw new Error("that token was not accepted");
+      if (res.status === 429) throw new Error("too many attempts — wait a few minutes");
+      if (!res.ok) throw new Error("that password was not accepted");
       $("#login").classList.add("hidden");
       $("#login-error").textContent = "";
       refresh();

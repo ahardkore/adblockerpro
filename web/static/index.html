@@ -12,7 +12,7 @@
   <form class="login-card" id="login-form">
     <h1>🛡️ adblockerpro</h1>
     <p>This dashboard is protected. Enter the admin token.</p>
-    <input type="password" id="login-token" placeholder="admin token" autocomplete="current-password" />
+    <input type="password" id="login-token" placeholder="password or admin token" autocomplete="current-password" />
     <button type="submit">Unlock</button>
     <span class="error" id="login-error"></span>
   </form>
@@ -196,11 +196,44 @@
       </table>
     </div>
     <div class="box">
-      <div class="box-head"><h2>Seen on the network</h2></div>
+      <div class="box-head"><h2>Seen on the network</h2><span class="hint">click a row for a drill-down</span></div>
       <table class="log">
         <thead><tr><th>IP</th><th>Name</th><th>Queries</th><th>Blocked</th><th>Last seen</th><th></th></tr></thead>
         <tbody id="seen-rows"></tbody>
       </table>
+    </div>
+    <div class="box" id="device-report-box">
+      <div class="box-head">
+        <h2>Device report</h2>
+        <span class="hint">
+          <select id="report-client"><option value="">pick a device…</option></select>
+          <select id="report-days">
+            <option value="1">last 24 hours</option>
+            <option value="7" selected>last 7 days</option>
+            <option value="30">last 30 days</option>
+          </select>
+        </span>
+      </div>
+      <div id="report-empty" class="hint">Pick a device to see what it has been asking for.</div>
+      <div id="report-body" class="hidden">
+        <div class="cards small">
+          <div class="card"><span class="label">Queries</span><span class="value" id="rep-total">–</span><span class="hint" id="rep-window"></span></div>
+          <div class="card"><span class="label">Blocked</span><span class="value" id="rep-blocked">–</span><span class="hint" id="rep-ratio"></span></div>
+          <div class="card"><span class="label">Cached</span><span class="value" id="rep-cached">–</span><span class="hint" id="rep-latency"></span></div>
+          <div class="card"><span class="label">Policy</span><span class="value" id="rep-policy">–</span><span class="hint" id="rep-seen"></span></div>
+        </div>
+        <div id="rep-chart" class="chart"></div>
+        <div class="split">
+          <div>
+            <h3>Most queried</h3>
+            <table class="mini" id="rep-top"></table>
+          </div>
+          <div>
+            <h3>Most blocked</h3>
+            <table class="mini" id="rep-blocked-table"></table>
+          </div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -340,6 +373,24 @@
           <a class="btn ghost" href="/api/backup" download>Download backup</a>
           <label class="btn ghost" for="restore-file">Restore backup<input type="file" id="restore-file" accept="application/json" hidden /></label>
         </div>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Security</h2><span class="hint" id="security-state"></span></div>
+      <form id="password-form" class="settings-grid">
+        <label>Current password<input type="password" id="pw-current" autocomplete="current-password" placeholder="leave blank if none is set" /></label>
+        <label>New password<input type="password" id="pw-new" autocomplete="new-password" placeholder="at least 8 characters" /></label>
+        <label>Repeat new password<input type="password" id="pw-repeat" autocomplete="new-password" /></label>
+        <label class="row"><input type="checkbox" id="set-tls" /> Serve the dashboard over HTTPS (self-signed certificate)</label>
+        <label>HTTPS port<input id="set-tls-port" type="number" min="1" max="65535" /></label>
+        <label class="row"><input type="checkbox" id="set-tls-redirect" /> Redirect plain HTTP to HTTPS</label>
+        <label class="row"><input type="checkbox" id="set-prefetch" /> Prefetch popular names before their TTL expires</label>
+        <div class="actions">
+          <button class="btn" type="submit">Save security settings</button>
+          <button class="btn ghost" type="button" id="btn-logout-all">Sign out everywhere</button>
+          <button class="btn ghost" type="button" id="btn-logout">Sign out</button>
+        </div>
+        <span class="hint" id="password-msg"></span>
       </form>
     </div>
     <div class="box">

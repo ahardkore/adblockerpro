@@ -361,10 +361,15 @@ func (c *client) device(ip string, days int) error {
 }
 
 func (c *client) pause(dur string) error {
-	if _, err := time.ParseDuration(dur); err != nil {
+	d, err := time.ParseDuration(dur)
+	if err != nil || d <= 0 {
 		return fmt.Errorf("%q is not a duration like 15m or 2h", dur)
 	}
-	if err := c.post("/api/control", map[string]string{"action": "pause", "duration": dur}, nil); err != nil {
+	minutes := int(d.Minutes())
+	if minutes < 1 {
+		minutes = 1
+	}
+	if err := c.post("/api/control", map[string]any{"action": "pause", "minutes": minutes}, nil); err != nil {
 		return err
 	}
 	fmt.Printf("filtering paused for %s\n", dur)
@@ -372,7 +377,7 @@ func (c *client) pause(dur string) error {
 }
 
 func (c *client) resume() error {
-	if err := c.post("/api/control", map[string]string{"action": "resume"}, nil); err != nil {
+	if err := c.post("/api/control", map[string]any{"action": "resume"}, nil); err != nil {
 		return err
 	}
 	fmt.Println("filtering resumed")
@@ -380,7 +385,7 @@ func (c *client) resume() error {
 }
 
 func (c *client) flush() error {
-	if err := c.post("/api/control", map[string]string{"action": "flush-cache"}, nil); err != nil {
+	if err := c.post("/api/control", map[string]any{"action": "flush-cache"}, nil); err != nil {
 		return err
 	}
 	fmt.Println("cache flushed")

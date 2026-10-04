@@ -708,11 +708,24 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			"lists": map[string]any{"update_interval_hours": s.Config.Lists.UpdateIntervalHours},
 			"log":   s.Config.Log,
 			"path":  s.Config.Path(),
+			// Never echo the token or the password hash.
+			"web": map[string]any{
+				"listen":        s.Config.Web.Listen,
+				"port":          s.Config.Web.Port,
+				"session_hours": s.Config.Web.SessionHours,
+				"password_set":  s.Config.Web.AdminPasswordHash != "",
+				"token_set":     s.Config.Web.AdminToken != "",
+				"tls":           s.Config.Web.TLS,
+			},
 		})
 	case http.MethodPut, http.MethodPost:
 		var body struct {
 			DNS                 *config.DNSConfig `json:"dns"`
 			UpdateIntervalHours *int              `json:"update_interval_hours"`
+			Web                 *struct {
+				SessionHours *int               `json:"session_hours"`
+				TLS          *config.TLSConfig  `json:"tls"`
+			} `json:"web"`
 		}
 		if err := decode(r, &body); err != nil {
 			badRequest(w, "invalid body")
@@ -729,14 +742,27 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if body.UpdateIntervalHours != nil && *body.UpdateIntervalHours > 0 {
 			s.Config.Lists.UpdateIntervalHours = *body.UpdateIntervalHours
 		}
+		oldWeb := s.Config.Web
+		if body.Web != nil {
+			// Credentials are changed through /api/password only; the
+			// listen address needs a restart, so neither is editable here.
+			if body.Web.SessionHours != nil && *body.Web.SessionHours > 0 {
+				s.Config.Web.SessionHours = *body.Web.SessionHours
+			}
+			if body.Web.TLS != nil {
+				s.Config.Web.TLS = *body.Web.TLS
+			}
+		}
 		if err := s.Config.Validate(); err != nil {
 			s.Config.DNS = old
+			s.Config.Web = oldWeb
 			badRequest(w, err.Error())
 			return
 		}
 		if s.Reload != nil {
 			if err := s.Reload(s.Config); err != nil {
 				s.Config.DNS = old
+				s.Config.Web = oldWeb
 				badRequest(w, err.Error())
 				return
 			}
@@ -744,7 +770,12 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if err := s.Config.Save(); err != nil {
 			s.Log.Warn("save config", "err", err)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "dns": s.Config.DNS})
+		writeJSON(w, http.StatusOK, map[string]any{
+			"status":       "ok",
+			"dns":          s.Config.DNS,
+			"tls":          s.Config.Web.TLS,
+			"needs_restart": s.Config.Web.TLS != oldWeb.TLS,
+		})
 	default:
 		badRequest(w, "unsupported method")
 	}
