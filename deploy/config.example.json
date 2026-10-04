@@ -33,12 +33,20 @@
         "domain": "home.arpa",
         "upstream": "192.168.1.1"
       }
-    ]
+    ],
+    "prefetch": true
   },
   "web": {
     "listen": "0.0.0.0",
     "port": 8080,
-    "admin_token": ""
+    "admin_token": "",
+    "session_hours": 168,
+    "admin_password_hash": "",
+    "tls": {
+      "enabled": false,
+      "port": 8443,
+      "redirect_http": false
+    }
   },
   "lists": {
     "sources": [

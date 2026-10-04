@@ -51,12 +51,14 @@ install_binary() {
     if [ -x "$src/adblockerpro" ]; then
       log "installing locally built binary"
       install -m 0755 "$src/adblockerpro" "$BIN_DIR/adblockerpro"
+      [ -x "$src/abpctl" ] && install -m 0755 "$src/abpctl" "$BIN_DIR/abpctl"
       return
     fi
     command -v go >/dev/null || die "no binary found and Go is not installed; run 'make build' first"
     log "building from source"
     ( cd "$src" && make build )
     install -m 0755 "$src/adblockerpro" "$BIN_DIR/adblockerpro"
+    [ -x "$src/abpctl" ] && install -m 0755 "$src/abpctl" "$BIN_DIR/abpctl"
     return
   fi
 
@@ -67,6 +69,14 @@ install_binary() {
   log "downloading $url"
   curl -fsSL "$url" -o "$tmp" || die "download failed — build locally with: make pi64 && sudo ./deploy/install.sh --local"
   install -m 0755 "$tmp" "$BIN_DIR/adblockerpro"
+  rm -f "$tmp"
+
+  # abpctl is the optional command line client; a missing one is not fatal.
+  tmp="$(mktemp)"
+  if curl -fsSL "https://github.com/$REPO/releases/latest/download/abpctl-$arch" -o "$tmp" 2>/dev/null; then
+    install -m 0755 "$tmp" "$BIN_DIR/abpctl"
+    log "installed abpctl"
+  fi
   rm -f "$tmp"
 }
 

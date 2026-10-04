@@ -169,16 +169,17 @@ func (c *client) post(path string, body any, out any) error {
 
 type summary struct {
 	Summary struct {
-		Queries    int64   `json:"queries"`
-		Blocked    int64   `json:"blocked"`
-		Cached     int64   `json:"cached"`
-		Errors     int64   `json:"errors"`
-		BlockRatio float64 `json:"block_ratio"`
-		AvgMS      float64 `json:"avg_ms"`
-		Clients    int     `json:"clients"`
-		TopDomains []item  `json:"top_domains"`
-		TopBlocked []item  `json:"top_blocked"`
-		TopClients []item  `json:"top_clients"`
+		Total        int64   `json:"total"`
+		Blocked      int64   `json:"blocked"`
+		Cached       int64   `json:"cached"`
+		Errors       int64   `json:"errors"`
+		Validated    int64   `json:"validated"`
+		BlockPercent float64 `json:"block_percent"`
+		AvgMS        float64 `json:"avg_ms"`
+		Clients      int     `json:"clients"`
+		TopAllowed   []item  `json:"top_allowed"`
+		TopBlocked   []item  `json:"top_blocked"`
+		TopClients   []item  `json:"top_clients"`
 	} `json:"summary"`
 	Cache struct {
 		Entries  int     `json:"entries"`
@@ -187,7 +188,7 @@ type summary struct {
 	Upstreams []struct {
 		Name    string `json:"name"`
 		Healthy bool   `json:"healthy"`
-		Queries int64  `json:"queries"`
+		Queries uint64 `json:"queries"`
 	} `json:"upstreams"`
 	Lists struct {
 		Domains int `json:"domains"`
@@ -218,8 +219,8 @@ func (c *client) status() error {
 		fmt.Printf("FILTERING PAUSED until %s\n", s.Status.PausedUntil.Local().Format("15:04:05"))
 	}
 	fmt.Printf("\nLast 24 hours\n")
-	fmt.Printf("  queries   %d\n", s.Summary.Queries)
-	fmt.Printf("  blocked   %d (%.1f%%)\n", s.Summary.Blocked, s.Summary.BlockRatio)
+	fmt.Printf("  queries   %d\n", s.Summary.Total)
+	fmt.Printf("  blocked   %d (%.1f%%)\n", s.Summary.Blocked, s.Summary.BlockPercent)
 	fmt.Printf("  cached    %d\n", s.Summary.Cached)
 	fmt.Printf("  errors    %d\n", s.Summary.Errors)
 	fmt.Printf("  clients   %d\n", s.Summary.Clients)
@@ -242,7 +243,7 @@ func (c *client) top(n int) error {
 	if err := c.get("/api/summary?hours=24", &s); err != nil {
 		return err
 	}
-	printItems("Most queried", s.Summary.TopDomains, n)
+	printItems("Most queried", s.Summary.TopAllowed, n)
 	printItems("Most blocked", s.Summary.TopBlocked, n)
 	printItems("Busiest clients", s.Summary.TopClients, n)
 	return nil
@@ -263,7 +264,7 @@ func printItems(title string, items []item, n int) {
 }
 
 type queryPage struct {
-	Entries []struct {
+	Queries []struct {
 		Time   time.Time `json:"time"`
 		Client string    `json:"client"`
 		Device string    `json:"device"`
@@ -272,7 +273,7 @@ type queryPage struct {
 		Status string    `json:"status"`
 		Rule   string    `json:"rule"`
 		MS     float64   `json:"ms"`
-	} `json:"entries"`
+	} `json:"queries"`
 }
 
 func (c *client) tail(n int, follow bool) error {
@@ -284,8 +285,8 @@ func (c *client) tail(n int, follow bool) error {
 		}
 		// The API returns newest first; print oldest first so the log reads
 		// downwards like tail -f.
-		for i := len(p.Entries) - 1; i >= 0; i-- {
-			e := p.Entries[i]
+		for i := len(p.Queries) - 1; i >= 0; i-- {
+			e := p.Queries[i]
 			key := fmt.Sprintf("%d|%s|%s", e.Time.UnixNano(), e.Client, e.Domain)
 			if seen[key] {
 				continue
@@ -394,28 +395,31 @@ func (c *client) flush() error {
 
 func (c *client) check(domain string) error {
 	var resp struct {
-		Domain  string `json:"domain"`
-		Blocked bool   `json:"blocked"`
-		Reason  string `json:"reason"`
-		Rule    string `json:"rule"`
-		Source  string `json:"source"`
+		Domain   string `json:"domain"`
+		Sinkhole string `json:"sinkhole"`
+		Decision struct {
+			Blocked       bool   `json:"blocked"`
+			Rule          string `json:"rule"`
+			Source        string `json:"source"`
+			MatchedDomain string `json:"matched_domain"`
+		} `json:"decision"`
 	}
 	if err := c.get("/api/check?domain="+url.QueryEscape(domain), &resp); err != nil {
 		return err
 	}
 	verdict := "allowed"
-	if resp.Blocked {
-		verdict = "BLOCKED"
+	if resp.Decision.Blocked {
+		verdict = "BLOCKED (" + resp.Sinkhole + ")"
 	}
 	fmt.Printf("%s: %s", resp.Domain, verdict)
-	if resp.Reason != "" {
-		fmt.Printf(" (%s)", resp.Reason)
+	if resp.Decision.MatchedDomain != "" && resp.Decision.MatchedDomain != resp.Domain {
+		fmt.Printf(" via %s", resp.Decision.MatchedDomain)
 	}
-	if resp.Rule != "" {
-		fmt.Printf(" rule=%s", resp.Rule)
+	if resp.Decision.Rule != "" {
+		fmt.Printf(" rule=%s", resp.Decision.Rule)
 	}
-	if resp.Source != "" {
-		fmt.Printf(" source=%s", resp.Source)
+	if resp.Decision.Source != "" {
+		fmt.Printf(" source=%q", resp.Decision.Source)
 	}
 	fmt.Println()
 	return nil

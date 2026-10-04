@@ -86,8 +86,14 @@ state = {
         "cache_size": 20000, "cache_min_ttl": 30, "cache_max_ttl": 86400,
         "upstream_timeout_ms": 3500, "rate_limit_per_client": 0,
         "allowed_clients": [], "local_records": {},
-        "request_dnssec": True, "doh_server": True,
+        "request_dnssec": True, "doh_server": True, "prefetch": True,
         "conditional_forward": [{"domain": "home.arpa", "upstream": "192.168.1.1"}],
+    },
+    "web": {
+        "listen": "0.0.0.0", "port": 8080, "session_hours": 168,
+        "password_set": False, "token_set": False,
+        "tls": {"enabled": False, "port": 8443, "redirect_http": False,
+                "cert_file": "", "key_file": ""},
     },
 }
 for ls in state["lists"]:
@@ -235,7 +241,40 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"devices": state["devices"], "seen": seen})
         if url.path == "/api/settings":
             return self.send_json({"dns": state["settings"], "lists": {"update_interval_hours": 24},
-                                   "log": {"level": "info", "query_log_size": 20000}, "path": "/etc/adblockerpro/config.json"})
+                                   "log": {"level": "info", "query_log_size": 20000},
+                                   "path": "/etc/adblockerpro/config.json",
+                                   "web": state["web"]})
+        if url.path == "/api/sessions":
+            return self.send_json({"sessions": 1, "password_set": state["web"]["password_set"],
+                                   "token_set": False, "tls": state["web"]["tls"]["enabled"],
+                                   "fingerprint": "a1:b2:c3:d4:e5:f6:07:18:29:3a:4b:5c:6d:7e:8f:90"})
+        if url.path == "/api/devices/clients":
+            return self.send_json({"enabled": True, "days": 7,
+                                   "clients": [{"client": ip, "name": name, "queries": random.randint(200, 4000)}
+                                               for ip, name in DEVICES]})
+        if url.path == "/api/devices/report":
+            client = (q.get("client") or [""])[0]
+            days = int((q.get("days") or ["7"])[0])
+            hourly = [random.randint(20, 400) for _ in range(24)]
+            blocked_hourly = [random.randint(0, v // 2) for v in hourly]
+            total = sum(hourly)
+            blocked = sum(blocked_hourly)
+            name = dict(DEVICES).get(client, "")
+            return self.send_json({
+                "enabled": True, "days": days,
+                "report": {
+                    "client": client, "device": name, "total": total, "blocked": blocked,
+                    "cached": int(total * 0.4), "errors": random.randint(0, 5),
+                    "block_ratio": (blocked / total * 100) if total else 0,
+                    "avg_ms": round(random.uniform(8, 30), 1),
+                    "first_seen": now_iso(), "last_seen": now_iso(),
+                    "top_domains": [{"name": d, "count": random.randint(20, 400)} for d in ALLOWED[:9]],
+                    "top_blocked": [{"name": d, "count": random.randint(10, 250)} for d in BLOCKED[:10]],
+                    "types": [{"name": t, "count": random.randint(10, 300)} for t in ("A", "AAAA", "HTTPS")],
+                    "hourly": hourly, "blocked_hourly": blocked_hourly,
+                },
+                "policy": {"name": name, "group": "", "paused": False, "known": bool(name), "match": client},
+            })
         if url.path == "/api/check":
             domain = (q.get("domain") or [""])[0].lower()
             hit = any(domain.endswith(b) or b.endswith(domain) for b in BLOCKED) or "ad" in domain or "track" in domain
@@ -344,6 +383,11 @@ class Handler(SimpleHTTPRequestHandler):
             return self.send_json({"status": "restored", "rules": len(state["rules"]),
                                    "devices": len(state["devices"]), "schedules": len(state["schedules"]),
                                    "lists": len(state["lists"])})
+        if url.path == "/api/password":
+            state["web"]["password_set"] = bool(data.get("new"))
+            return self.send_json({"status": "ok", "password_set": state["web"]["password_set"]})
+        if url.path == "/api/logout":
+            return self.send_json({"status": "ok"})
         if url.path == "/api/login":
             return self.send_json({"status": "ok"})
         return self.send_json({"error": "not found"}, 404)

@@ -69,6 +69,11 @@ Features:
 | Per-device pause | ✓ | partial (groups) |
 | Prometheus metrics | ✓ built in | third-party exporter |
 | Backup / restore | ✓ one JSON file | ✓ Teleporter |
+| Native HTTPS for the UI | ✓ self-signed out of the box | ✓ |
+| Password storage | PBKDF2-SHA256 + expiring sessions | balloon/scrypt + sessions |
+| Command line client | ✓ `abpctl` | ✓ `pihole` |
+| Cache survives a reboot | ✓ | ✗ |
+| Query coalescing + prefetch | ✓ | prefetch ✗ |
 | DNSSEC | DO bit + AD tracking, validation delegated to the upstream | full local validation |
 | Maturity | young | a decade of field use |
 
@@ -76,6 +81,21 @@ The one place Pi-hole is still genuinely ahead is **local DNSSEC
 validation** — we ask a validating upstream (Quad9, Cloudflare) to do the
 cryptography and report the result, rather than verifying the signature
 chain on the Pi itself.
+
+### Speed
+
+Three things keep the resolver out of the way:
+
+- **Coalescing** — when several devices ask for the same hostname inside the
+  same few milliseconds (exactly what happens when a household starts
+  streaming) one query goes upstream and everybody shares the answer.
+- **Prefetching** — entries that get asked for repeatedly are refreshed in
+  the background shortly before their TTL runs out, so the cache rarely
+  misses on the names you actually use.
+- **A cache that survives reboots** — the cache is written to
+  `<data-dir>/cache.bin` on shutdown and reloaded on start, with anything
+  that expired in the meantime dropped. No cold-start penalty after an
+  update or a power cut.
 
 ## Hardware
 
@@ -135,16 +155,55 @@ network settings.
 - **Rules** — your own patterns: `ads.example.com`, `*.example.com`, or
   `/^ads?[0-9]*\./` regexes. Allow rules always beat block rules.
 - **Devices** — name what the resolver has seen, assign rule groups, pause
-  filtering per device.
+  filtering per device, and open a **per-device report**: its busiest and
+  most-blocked domains, block rate, and an hour-by-hour chart that makes
+  "the TV phones home at 3 a.m." impossible to miss.
 - **History** — 30 days of queries, searchable and paginated, with a daily
   bar chart and JSONL export.
 - **Schedules** — time windows per group: block everything, block a list, or
   allow only a list.
 - **DHCP** — pool settings, live leases, pinned addresses.
 - **Settings** — sinkhole mode, upstreams, DoH in and out, DNSSEC,
-  conditional forwarding, cache, rate limits, backup and restore.
+  conditional forwarding, cache, prefetching, rate limits, backup and
+  restore, plus a **Security** box for the password, HTTPS and sessions.
 
-To require a password, set `web.admin_token` in the config and restart.
+### Locking it down
+
+```bash
+sudo adblockerpro -set-password          # prompts, stores a PBKDF2 hash
+```
+
+The password is never written to disk in the clear: the config holds a
+PBKDF2-HMAC-SHA256 hash (210 000 iterations) and logging in sets an opaque,
+expiring `abp_session` cookie. Five bad guesses from one address lock that
+address out for five minutes. `web.admin_token` still exists for scripts
+(`X-API-Key`), and you can change the password from the Settings tab, where
+you can also sign every other browser out.
+
+For HTTPS, tick *Serve the dashboard over HTTPS* (or set `web.tls.enabled`)
+and restart. With no certificate configured the service generates a
+self-signed one in the data directory — valid for five years, renewed
+automatically, with every local IP and hostname in its SAN list — and prints
+its fingerprint in the log and the Settings tab so you can check the
+browser's warning against it. Point a real certificate at it with
+`web.tls.cert_file` / `web.tls.key_file`.
+
+### abpctl, from the terminal
+
+The release ships a second binary for when you are already on SSH:
+
+```bash
+abpctl status               # queries, block rate, cache, upstream health
+abpctl top -n 15            # busiest and most-blocked domains
+abpctl tail -f              # live query log
+abpctl device 192.168.1.21  # per-device drill-down
+abpctl pause 15m            # and: resume, flush
+abpctl check ads.example.com
+abpctl backup ~/abp-backup.json
+```
+
+It talks to the local API; set `ABP_ADDR` and `ABP_TOKEN` (or pass `-addr`
+and `-token`) when the dashboard is not on `http://127.0.0.1:8080`.
 
 ## Configuration
 
@@ -158,6 +217,7 @@ Notable keys:
 | --- | --- |
 | `dns.sinkhole` | `zero-ip` (default), `nxdomain`, `refused` or `custom-ip`. |
 | `dns.prefer_doh` | Try DNS-over-HTTPS first, fall back to plain UDP. |
+| `dns.prefetch` | Refresh popular cache entries ~20 s before they expire. |
 | `dns.block_subdomains` | A listed domain also covers its subdomains. |
 | `dns.block_cname_cloaking` | Re-check CNAME targets of allowed answers. |
 | `dns.block_https_records` | Drop HTTPS/SVCB records (stops some ECH-based bypasses). |
@@ -170,6 +230,9 @@ Notable keys:
 | `history.enabled`, `history.retention_days` | Long-term query store and how long to keep it. |
 | `dhcp.*` | Built-in DHCP server: pool, gateway, lease time, reservations. |
 | `schedules[]` | Time-based rules; see the Schedules tab. |
+| `web.admin_password_hash` | PBKDF2 hash; set it with `adblockerpro -set-password`. |
+| `web.session_hours` | How long a dashboard login lasts (default 168). |
+| `web.tls.*` | HTTPS for the dashboard: `enabled`, `port`, `cert_file`, `key_file`, `redirect_http`. |
 
 ### Running the DHCP server
 
@@ -181,10 +244,11 @@ automatically, and the dashboard starts naming devices by their hostnames.
 
 ### DNS-over-HTTPS for your phone
 
-Enable `dns.doh_server`, put the dashboard behind TLS (Caddy or nginx is two
-lines), and point Android's "Private DNS" or a browser's secure DNS at
-`https://your-host/dns-query`. Your phone then keeps the same filtering off
-the home network.
+Enable `dns.doh_server` and `web.tls.enabled`, then point a browser's secure
+DNS at `https://<pi>:8443/dns-query`. Android's "Private DNS" insists on a
+publicly trusted certificate, so for phones put a real certificate in
+`web.tls.cert_file` (or a reverse proxy in front). Your phone then keeps the
+same filtering when it leaves the house.
 
 ## Troubleshooting
 
@@ -256,6 +320,11 @@ GET  /api/history/daily?days=30          GET /api/history/export
 GET  /api/schedules    POST /api/schedules    DELETE /api/schedules?id=
 GET  /api/dhcp         POST /api/dhcp         POST/DELETE /api/dhcp/reservation
 GET  /api/devices/suggest
+GET  /api/devices/clients?days=7
+GET  /api/devices/report?client=192.168.1.21&days=7
+POST /api/login        POST /api/logout
+POST /api/password     {"current":"…","new":"…"}
+GET  /api/sessions     DELETE /api/sessions
 GET  /api/backup       POST /api/restore
 GET  /api/health
 GET  /metrics                            # Prometheus
