@@ -3,7 +3,11 @@
   "dns": {
     "listen": "0.0.0.0",
     "port": 53,
-    "upstreams": ["1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"],
+    "upstreams": [
+      "1.1.1.1:53",
+      "9.9.9.9:53",
+      "8.8.8.8:53"
+    ],
     "doh_upstreams": [
       "https://cloudflare-dns.com/dns-query",
       "https://dns.quad9.net/dns-query"
@@ -21,7 +25,15 @@
     "upstream_timeout_ms": 3500,
     "rate_limit_per_client": 0,
     "allowed_clients": [],
-    "local_records": {}
+    "local_records": {},
+    "request_dnssec": true,
+    "doh_server": false,
+    "conditional_forward": [
+      {
+        "domain": "home.arpa",
+        "upstream": "192.168.1.1"
+      }
+    ]
   },
   "web": {
     "listen": "0.0.0.0",
@@ -59,6 +71,13 @@
         "title": "Smart-TV & CTV trackers",
         "url": "https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/SmartTV.txt",
         "enabled": true
+      },
+      {
+        "id": "",
+        "title": "Allowlist: do not break my smart TV",
+        "url": "https://raw.githubusercontent.com/anudeepND/whitelist/master/domains/whitelist.txt",
+        "enabled": false,
+        "kind": "allow"
       }
     ],
     "update_interval_hours": 24
@@ -81,5 +100,35 @@
     "query_log_size": 20000,
     "anonymize_clients": false,
     "persist_stats": true
-  }
+  },
+  "history": {
+    "enabled": true,
+    "retention_days": 30
+  },
+  "dhcp": {
+    "enabled": false,
+    "server_ip": "192.168.1.2",
+    "gateway": "192.168.1.1",
+    "netmask": "255.255.255.0",
+    "range_start": "192.168.1.100",
+    "range_end": "192.168.1.200",
+    "lease_hours": 12,
+    "domain_name": "lan",
+    "reservations": []
+  },
+  "schedules": [
+    {
+      "id": "bedtime",
+      "name": "Bedtime",
+      "enabled": false,
+      "group": "kids",
+      "days": [
+        "all"
+      ],
+      "start": "22:00",
+      "end": "07:00",
+      "mode": "block-all",
+      "patterns": []
+    }
+  ]
 }

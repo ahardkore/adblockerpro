@@ -37,9 +37,12 @@
 <nav class="tabs">
   <button class="tab active" data-tab="overview">Overview</button>
   <button class="tab" data-tab="queries">Query log</button>
+  <button class="tab" data-tab="history">History</button>
   <button class="tab" data-tab="lists">Blocklists</button>
   <button class="tab" data-tab="rules">Rules</button>
+  <button class="tab" data-tab="schedules">Schedules</button>
   <button class="tab" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="dhcp">DHCP</button>
   <button class="tab" data-tab="settings">Settings</button>
 </nav>
 
@@ -68,11 +71,18 @@
         <span class="hint" id="stat-cache-entries">–</span>
       </div>
       <div class="card">
+        <span class="label">DNSSEC validated</span>
+        <span class="value" id="stat-dnssec">–</span>
+        <span class="hint" id="stat-history">–</span>
+      </div>
+      <div class="card">
         <span class="label">Avg response</span>
         <span class="value" id="stat-latency">–</span>
         <span class="hint" id="stat-uptime">–</span>
       </div>
     </div>
+
+    <div id="schedule-banner" class="banner hidden"></div>
 
     <div class="grid-2">
       <div class="box">
@@ -194,6 +204,107 @@
     </div>
   </section>
 
+  <!-- HISTORY -->
+  <section class="panel" id="tab-history">
+    <div class="box">
+      <div class="box-head">
+        <h2>Long-term history</h2>
+        <span class="hint" id="history-meta"></span>
+      </div>
+      <form id="history-form" class="inline-form">
+        <input id="h-search" placeholder="domain, device or rule" />
+        <select id="h-status">
+          <option value="">all</option>
+          <option value="blocked">blocked</option>
+          <option value="allowed">allowed</option>
+          <option value="cached">cached</option>
+          <option value="error">errors</option>
+        </select>
+        <input id="h-from" type="date" />
+        <input id="h-to" type="date" />
+        <button class="btn" type="submit">Search</button>
+        <a class="btn ghost" id="h-export" href="/api/history/export">Export JSONL</a>
+      </form>
+      <div id="history-chart" class="chart"></div>
+      <table class="log">
+        <thead><tr><th>When</th><th>Device</th><th>Domain</th><th>Type</th><th>Status</th><th>Reason</th><th>ms</th></tr></thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+      <div class="pager">
+        <button class="btn tiny" id="h-prev">‹ newer</button>
+        <span class="hint" id="h-page"></span>
+        <button class="btn tiny" id="h-next">older ›</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCHEDULES -->
+  <section class="panel" id="tab-schedules">
+    <div class="box">
+      <div class="box-head">
+        <h2>Time-based rules</h2>
+        <span class="hint">bedtime, homework hours, no socials at dinner — something Pi-hole leaves to cron</span>
+      </div>
+      <form id="schedule-form" class="settings-grid">
+        <label>Name<input id="sc-name" placeholder="Bedtime" /></label>
+        <label>Applies to group<input id="sc-group" placeholder="blank = every device" /></label>
+        <label>Mode
+          <select id="sc-mode">
+            <option value="block-all">block everything</option>
+            <option value="block-list">block only these domains</option>
+            <option value="allow-only">allow only these domains</option>
+          </select>
+        </label>
+        <label>Days<input id="sc-days" placeholder="all, weekdays, weekends or mon,tue…" /></label>
+        <label>From<input id="sc-start" type="time" value="22:00" /></label>
+        <label>Until<input id="sc-end" type="time" value="07:00" /></label>
+        <label class="wide">Domains (one per line; wildcards and /regex/ allowed)<textarea id="sc-patterns" rows="2"></textarea></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save schedule</button>
+          <span class="hint" id="sc-next"></span>
+        </div>
+      </form>
+      <table class="log">
+        <thead><tr><th>Name</th><th>When</th><th>Days</th><th>Group</th><th>Mode</th><th>State</th><th></th></tr></thead>
+        <tbody id="schedule-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DHCP -->
+  <section class="panel" id="tab-dhcp">
+    <div class="box">
+      <div class="box-head">
+        <h2>DHCP server</h2>
+        <span class="hint">hand out addresses yourself: every device then gets this Pi as its DNS, and you learn its hostname</span>
+      </div>
+      <form id="dhcp-form" class="settings-grid">
+        <label class="row"><input type="checkbox" id="dh-enabled" /> Enable the DHCP server (turn your router's off first)</label>
+        <label>This Pi's IP<input id="dh-server" placeholder="192.168.1.2" /></label>
+        <label>Router / gateway<input id="dh-gateway" placeholder="192.168.1.1" /></label>
+        <label>Netmask<input id="dh-netmask" placeholder="255.255.255.0" /></label>
+        <label>Pool start<input id="dh-start" placeholder="192.168.1.100" /></label>
+        <label>Pool end<input id="dh-end" placeholder="192.168.1.200" /></label>
+        <label>Lease hours<input id="dh-lease" type="number" min="1" value="12" /></label>
+        <label>Domain name<input id="dh-domain" placeholder="lan" /></label>
+        <div class="actions"><button class="btn" type="submit">Save DHCP settings</button></div>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Leases</h2><span class="hint" id="dhcp-count"></span></div>
+      <form id="reservation-form" class="inline-form">
+        <input id="res-mac" placeholder="aa:bb:cc:dd:ee:ff" />
+        <input id="res-ip" placeholder="192.168.1.50" />
+        <input id="res-host" placeholder="name (optional)" />
+        <button class="btn" type="submit">Pin address</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>IP</th><th>Hostname</th><th>MAC</th><th>Vendor</th><th>Expires</th><th></th></tr></thead>
+        <tbody id="lease-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
   <!-- SETTINGS -->
   <section class="panel" id="tab-settings">
     <div class="box">
@@ -215,6 +326,9 @@
         <label class="row"><input type="checkbox" id="set-cname" /> Block CNAME-cloaked trackers</label>
         <label class="row"><input type="checkbox" id="set-https" /> Drop HTTPS/SVCB records</label>
         <label class="row"><input type="checkbox" id="set-stale" /> Serve stale cache when upstreams fail</label>
+        <label class="row"><input type="checkbox" id="set-dnssec" /> Request DNSSEC (DO bit) and track validated answers</label>
+        <label class="row"><input type="checkbox" id="set-doh-server" /> Serve DNS-over-HTTPS at /dns-query</label>
+        <label>Conditional forwarding (one "domain=resolver" per line)<textarea id="set-forward" rows="2" placeholder="home.arpa=192.168.1.1"></textarea></label>
         <label>Cache size<input id="set-cachesize" type="number" min="100" /></label>
         <label>Upstream timeout (ms)<input id="set-timeout" type="number" min="200" /></label>
         <label>Block TTL (s)<input id="set-blockttl" type="number" min="0" /></label>
@@ -223,6 +337,8 @@
         <div class="actions">
           <button class="btn" type="submit">Save settings</button>
           <button class="btn ghost" type="button" id="btn-reset-stats">Reset statistics</button>
+          <a class="btn ghost" href="/api/backup" download>Download backup</a>
+          <label class="btn ghost" for="restore-file">Restore backup<input type="file" id="restore-file" accept="application/json" hidden /></label>
         </div>
       </form>
     </div>

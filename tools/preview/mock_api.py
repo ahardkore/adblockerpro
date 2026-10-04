@@ -63,6 +63,19 @@ state = {
         {"id": "a4", "title": "OISD small", "url": "https://small.oisd.nl/", "enabled": True, "domains": 42887, "last_updated": "", "last_error": ""},
         {"id": "a5", "title": "Smart-TV & CTV trackers", "url": "https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/SmartTV.txt", "enabled": True, "domains": 412, "last_updated": "", "last_error": ""},
     ],
+    "schedules": [
+        {"id": "s1", "name": "Bedtime", "enabled": True, "group": "kids", "days": ["all"],
+         "start": "22:00", "end": "07:00", "mode": "block-all", "patterns": []},
+        {"id": "s2", "name": "Dinner", "enabled": True, "group": "", "days": ["all"],
+         "start": "18:00", "end": "19:00", "mode": "block-list",
+         "patterns": ["*.tiktok.com", "instagram.com", "*.youtube.com"]},
+    ],
+    "dhcp": {
+        "enabled": True, "server_ip": "192.168.1.2", "gateway": "192.168.1.1",
+        "netmask": "255.255.255.0", "range_start": "192.168.1.100",
+        "range_end": "192.168.1.200", "lease_hours": 12, "domain_name": "lan",
+        "reservations": [{"mac": "aa:bb:cc:dd:ee:21", "ip": "192.168.1.21", "hostname": "living-room-tv"}],
+    },
     "settings": {
         "listen": "0.0.0.0", "port": 53,
         "upstreams": ["1.1.1.1:53", "9.9.9.9:53"],
@@ -73,6 +86,8 @@ state = {
         "cache_size": 20000, "cache_min_ttl": 30, "cache_max_ttl": 86400,
         "upstream_timeout_ms": 3500, "rate_limit_per_client": 0,
         "allowed_clients": [], "local_records": {},
+        "request_dnssec": True, "doh_server": True,
+        "conditional_forward": [{"domain": "home.arpa", "upstream": "192.168.1.1"}],
     },
 }
 for ls in state["lists"]:
@@ -179,6 +194,7 @@ class Handler(SimpleHTTPRequestHandler):
                     "top_allowed": top([x for x in qs if x["status"] != "blocked"], "domain"),
                     "top_blocked": top(blocked_only, "domain"),
                     "top_clients": top(qs, "device"),
+                    "validated": int(state["total"] * 0.72),
                     "types": top(qs, "type", 6),
                     "timeline": timeline(),
                 },
@@ -188,6 +204,10 @@ class Handler(SimpleHTTPRequestHandler):
                     {"name": "https://dns.quad9.net/dns-query", "healthy": True, "queries": 12, "errors": 0, "avg_ms": 24.9},
                     {"name": "udp://1.1.1.1:53", "healthy": True, "queries": 0, "errors": 0, "avg_ms": 0},
                 ],
+                "schedules": {"count": len(state["schedules"]),
+                              "active": [x for x in state["schedules"] if x["start"] <= datetime.now().strftime("%H:%M") < x["end"]]},
+                "dhcp": {"enabled": state["dhcp"]["enabled"], "leases": len(DEVICES)},
+                "history": {"enabled": True, "days": 30, "bytes": 48_300_000, "writes": state["total"]},
                 "lists": {"domains": domains, "sources": len(state["lists"]), "last_update": state["lists"][0]["last_updated"]},
                 "status": {"version": "preview", "uptime_s": int(time.time() - START), "dns_addr": "0.0.0.0:53",
                            "paused": bool(paused), "paused_until": datetime.fromtimestamp(state["paused_until"], timezone.utc).isoformat() if paused else "0001-01-01T00:00:00Z",
@@ -223,6 +243,45 @@ class Handler(SimpleHTTPRequestHandler):
                                    "decision": {"blocked": hit, "rule": domain if hit else "",
                                                 "source": "StevenBlack unified hosts" if hit else "",
                                                 "matched_domain": domain if hit else ""}})
+        if url.path == "/api/history":
+            rows = state["queries"]
+            status = (q.get("status") or [""])[0]
+            search = (q.get("search") or [""])[0].lower()
+            if status:
+                rows = [r for r in rows if r["status"] == status]
+            if search:
+                rows = [r for r in rows if search in r["domain"] or search in (r["device"] or "").lower()]
+            offset = int((q.get("offset") or ["0"])[0])
+            limit = int((q.get("limit") or ["100"])[0])
+            total = len(rows) * 37  # pretend there is a month of it
+            return self.send_json({"records": rows[offset:offset + limit], "total": total,
+                                   "offset": offset, "limit": limit,
+                                   "has_more": offset + limit < total, "enabled": True,
+                                   "days": [(datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d") for i in range(30)],
+                                   "bytes": 48_300_000})
+        if url.path == "/api/history/daily":
+            out = []
+            for i in range(29, -1, -1):
+                day = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
+                total = random.randint(14000, 26000)
+                out.append({"day": day, "total": total, "blocked": int(total * random.uniform(0.28, 0.42)),
+                            "cached": int(total * 0.4), "clients": 6, "bytes": total * 70})
+            return self.send_json({"days": out, "bytes": 48_300_000,
+                                   "top_blocked": top([x for x in state["queries"] if x["status"] == "blocked"], "domain", 15),
+                                   "top_allowed": top([x for x in state["queries"] if x["status"] != "blocked"], "domain", 15)})
+        if url.path == "/api/schedules":
+            nowhm = datetime.now().strftime("%H:%M")
+            return self.send_json({"schedules": state["schedules"], "now": now_iso(),
+                                   "active": [x for x in state["schedules"] if x["start"] <= nowhm < x["end"]],
+                                   "next_change": (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()})
+        if url.path == "/api/dhcp":
+            leases = [{"ip": ip, "mac": "aa:bb:cc:dd:ee:%02d" % (i + 16), "hostname": (name or "").lower().replace(" ", "-"),
+                       "vendor": random.choice(["Roku", "AmazonTechnologies", "Apple", "Samsung", ""]),
+                       "start": now_iso(), "expires": (datetime.now(timezone.utc) + timedelta(hours=9)).isoformat(),
+                       "static": i == 0, "last_seen": now_iso()}
+                      for i, (ip, name) in enumerate(DEVICES)]
+            return self.send_json({"config": state["dhcp"], "leases": leases,
+                                   "enabled": state["dhcp"]["enabled"], "count": len(leases)})
         if url.path == "/api/health":
             return self.send_json({"status": "ok", "version": "preview"})
         return self.send_json({"error": "not found"}, 404)
@@ -270,6 +329,21 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/api/settings":
             state["settings"].update(data.get("dns") or {})
             return self.send_json({"status": "ok", "dns": state["settings"]})
+        if url.path == "/api/schedules":
+            data.setdefault("id", "s%d" % (len(state["schedules"]) + 1))
+            state["schedules"] = [x for x in state["schedules"] if x["id"] != data["id"]]
+            state["schedules"].append(data)
+            return self.send_json(data)
+        if url.path == "/api/dhcp":
+            state["dhcp"].update(data)
+            return self.send_json({"status": "ok", "config": state["dhcp"]})
+        if url.path == "/api/dhcp/reservation":
+            state["dhcp"].setdefault("reservations", []).append(data)
+            return self.send_json(data)
+        if url.path == "/api/restore":
+            return self.send_json({"status": "restored", "rules": len(state["rules"]),
+                                   "devices": len(state["devices"]), "schedules": len(state["schedules"]),
+                                   "lists": len(state["lists"])})
         if url.path == "/api/login":
             return self.send_json({"status": "ok"})
         return self.send_json({"error": "not found"}, 404)
@@ -287,6 +361,14 @@ class Handler(SimpleHTTPRequestHandler):
         if url.path == "/api/devices":
             match = (q.get("match") or [""])[0]
             state["devices"] = [d for d in state["devices"] if d["match"] != match]
+            return self.send_json({"status": "removed"})
+        if url.path == "/api/schedules":
+            sid = (q.get("id") or [""])[0]
+            state["schedules"] = [x for x in state["schedules"] if x["id"] != sid]
+            return self.send_json({"status": "removed"})
+        if url.path == "/api/dhcp/reservation":
+            mac = (q.get("mac") or [""])[0]
+            state["dhcp"]["reservations"] = [r for r in state["dhcp"].get("reservations", []) if r["mac"] != mac]
             return self.send_json({"status": "removed"})
         if url.path == "/api/lists":
             lid = (q.get("id") or [""])[0]

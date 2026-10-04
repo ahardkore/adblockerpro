@@ -157,3 +157,19 @@ textarea { resize: vertical; font-family: ui-monospace, Menlo, monospace; font-s
 .login-card p { color: var(--muted); font-size: 13.5px; margin: 0; }
 .error { color: var(--bad); font-size: 13px; min-height: 18px; }
 .muted { color: var(--muted); }
+
+/* --- history, schedules and DHCP --- */
+.banner {
+  margin-top: 14px; padding: 11px 15px; border-radius: var(--radius);
+  background: rgba(251, 191, 36, .1); border: 1px solid rgba(251, 191, 36, .32);
+  color: #fde68a; font-size: 13.5px;
+}
+.banner.hidden { display: none; }
+
+.pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding-top: 12px; }
+.settings-grid label.wide { grid-column: 1 / -1; }
+.settings-grid .actions { align-items: center; flex-wrap: wrap; }
+.btn[download], label.btn { display: inline-flex; align-items: center; text-decoration: none; }
+a.btn { text-decoration: none; display: inline-flex; align-items: center; }
+#history-chart { height: 160px; margin-bottom: 10px; }
+input[type="date"], input[type="time"] { color-scheme: dark; }

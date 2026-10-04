@@ -48,6 +48,14 @@
     return fmt.format(n);
   }
 
+  function bytes(n) {
+    n = Number(n || 0);
+    if (n >= 1 << 30) return (n / (1 << 30)).toFixed(1) + " GB";
+    if (n >= 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
+    if (n >= 1024) return (n / 1024).toFixed(0) + " kB";
+    return n + " B";
+  }
+
   function duration(sec) {
     sec = Math.max(0, Math.floor(sec || 0));
     const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
@@ -94,6 +102,21 @@
       pill.textContent = "filtering";
       pill.className = "pill";
       $("#btn-pause").textContent = "Pause 5 min";
+    }
+
+    const dnssecPct = s.total ? (s.validated || 0) / s.total * 100 : 0;
+    $("#stat-dnssec").textContent = `${dnssecPct.toFixed(0)}%`;
+    $("#stat-history").textContent = d.history && d.history.enabled
+      ? `history: ${d.history.days} day${d.history.days === 1 ? "" : "s"}, ${bytes(d.history.bytes)}`
+      : "history off";
+
+    const banner = $("#schedule-banner");
+    const active = (d.schedules && d.schedules.active) || [];
+    if (active.length) {
+      banner.classList.remove("hidden");
+      banner.innerHTML = active.map((a) => `⏰ <b>${esc(a.name)}</b> is active (${esc(a.start)}–${esc(a.end)}, ${esc(a.mode)}${a.group ? ", group " + esc(a.group) : ""})`).join("<br>");
+    } else {
+      banner.classList.add("hidden");
     }
 
     drawChart(s.timeline || []);
@@ -235,16 +258,138 @@
     $("#set-blockttl").value = dns.block_ttl == null ? 60 : dns.block_ttl;
     $("#set-allowed").value = (dns.allowed_clients || []).join("\n");
     $("#set-interval").value = (d.lists && d.lists.update_interval_hours) || 24;
+    $("#set-dnssec").checked = !!dns.request_dnssec;
+    $("#set-doh-server").checked = !!dns.doh_server;
+    $("#set-forward").value = (dns.conditional_forward || []).map((f) => `${f.domain}=${f.upstream}`).join("\n");
     window.__dns = dns;
   }
 
   const lines = (sel) => $(sel).value.split("\n").map((s) => s.trim()).filter(Boolean);
+
+  /* ---------- history ---------- */
+
+  let historyOffset = 0;
+  const HISTORY_PAGE = 100;
+
+  async function loadHistory() {
+    const params = new URLSearchParams({
+      limit: String(HISTORY_PAGE),
+      offset: String(historyOffset),
+      search: $("#h-search").value.trim(),
+      status: $("#h-status").value,
+    });
+    if ($("#h-from").value) params.set("from", $("#h-from").value);
+    if ($("#h-to").value) params.set("to", $("#h-to").value + "T23:59:59Z");
+
+    const d = await api("/api/history?" + params.toString());
+    if (!d.enabled) {
+      $("#history-rows").innerHTML = `<tr><td colspan="7" class="muted">history is disabled in settings</td></tr>`;
+      $("#history-meta").textContent = "";
+      return;
+    }
+    $("#history-meta").textContent = `${fmt.format(d.total)} matching · ${d.days.length} day${d.days.length === 1 ? "" : "s"} kept · ${bytes(d.bytes)} on disk`;
+    $("#h-page").textContent = d.total
+      ? `${historyOffset + 1}–${Math.min(historyOffset + HISTORY_PAGE, d.total)} of ${fmt.format(d.total)}`
+      : "no matches";
+    $("#h-export").href = "/api/history/export" + ($("#h-from").value ? `?from=${$("#h-from").value}` : "");
+
+    $("#history-rows").innerHTML = (d.records || []).map((q) => `
+      <tr>
+        <td class="muted">${new Date(q.time).toLocaleString([], { hour12: false })}</td>
+        <td>${esc(q.device || q.client)}</td>
+        <td class="domain">${esc(q.domain)}</td>
+        <td class="muted">${esc(q.type)}</td>
+        <td><span class="tag ${esc(q.status)}">${esc(q.status)}</span></td>
+        <td class="muted">${esc(q.rule || q.source || q.upstream || "")}</td>
+        <td class="muted">${(q.ms || 0).toFixed(1)}</td>
+      </tr>`).join("") || `<tr><td colspan="7" class="muted">nothing matches that search</td></tr>`;
+
+    const daily = await api("/api/history/daily?days=30");
+    drawDaily(daily.days || []);
+  }
+
+  function drawDaily(days) {
+    const host = $("#history-chart");
+    if (!days.length) { host.innerHTML = ""; return; }
+    const w = Math.max(host.clientWidth, 320), h = 160, pad = 24;
+    const max = Math.max(1, ...days.map((d) => d.total));
+    const bw = (w - pad * 2) / days.length;
+    let bars = "";
+    days.forEach((d, i) => {
+      const x = pad + i * bw;
+      const th = ((h - pad * 2) * d.total) / max;
+      const bh = ((h - pad * 2) * d.blocked) / max;
+      const wd = Math.max(1, bw - 3);
+      bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - th).toFixed(1)}" width="${wd.toFixed(1)}" height="${th.toFixed(1)}" fill="#60a5fa" opacity=".5" rx="2"><title>${d.day}: ${d.total} queries, ${d.blocked} blocked</title></rect>`;
+      if (bh > 0) bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - bh).toFixed(1)}" width="${wd.toFixed(1)}" height="${bh.toFixed(1)}" fill="#f87171" rx="2"/>`;
+    });
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#243057"/>
+      ${bars}
+      <text x="${pad}" y="${h - 6}" fill="#8d9ac4" font-size="11">${days[0].day}</text>
+      <text x="${w - pad}" y="${h - 6}" fill="#8d9ac4" font-size="11" text-anchor="end">${days[days.length - 1].day}</text>
+      <text x="${pad}" y="14" fill="#8d9ac4" font-size="11">peak ${max}/day</text>
+    </svg>`;
+  }
+
+  /* ---------- schedules ---------- */
+
+  async function loadSchedules() {
+    const d = await api("/api/schedules");
+    const activeIDs = new Set((d.active || []).map((a) => a.id));
+    $("#sc-next").textContent = d.next_change ? `next change at ${clock(d.next_change)}` : "";
+    $("#schedule-rows").innerHTML = (d.schedules || []).map((s) => `
+      <tr>
+        <td>${esc(s.name)}</td>
+        <td class="muted">${esc(s.start)}–${esc(s.end)}</td>
+        <td class="muted">${esc((s.days || []).join(", ") || "every day")}</td>
+        <td class="muted">${esc(s.group || "all devices")}</td>
+        <td class="muted">${esc(s.mode)}</td>
+        <td>${activeIDs.has(s.id) ? `<span class="tag blocked">active now</span>` : (s.enabled ? `<span class="tag allowed">armed</span>` : `<span class="tag error">off</span>`)}</td>
+        <td>
+          <button class="btn tiny" data-toggle-schedule="${esc(s.id)}">${s.enabled ? "disable" : "enable"}</button>
+          <button class="btn tiny danger" data-del-schedule="${esc(s.id)}">remove</button>
+        </td>
+      </tr>`).join("") || `<tr><td colspan="7" class="muted">no schedules yet — try a 22:00–07:00 bedtime for the kids' group</td></tr>`;
+    window.__schedules = d.schedules || [];
+  }
+
+  /* ---------- dhcp ---------- */
+
+  async function loadDHCP() {
+    const d = await api("/api/dhcp");
+    const c = d.config || {};
+    $("#dh-enabled").checked = !!c.enabled;
+    $("#dh-server").value = c.server_ip || "";
+    $("#dh-gateway").value = c.gateway || "";
+    $("#dh-netmask").value = c.netmask || "255.255.255.0";
+    $("#dh-start").value = c.range_start || "";
+    $("#dh-end").value = c.range_end || "";
+    $("#dh-lease").value = c.lease_hours || 12;
+    $("#dh-domain").value = c.domain_name || "";
+    $("#dhcp-count").textContent = `${(d.leases || []).length} known client${(d.leases || []).length === 1 ? "" : "s"}`;
+    $("#lease-rows").innerHTML = (d.leases || []).map((l) => `
+      <tr>
+        <td class="domain">${esc(l.ip)}</td>
+        <td>${esc(l.hostname || "")}</td>
+        <td class="muted domain">${esc(l.mac)}</td>
+        <td class="muted">${esc(l.vendor || "")}</td>
+        <td class="muted">${l.static ? "reserved" : ago(l.expires)}</td>
+        <td>
+          <button class="btn tiny" data-pin-mac="${esc(l.mac)}" data-pin-ip="${esc(l.ip)}" data-pin-host="${esc(l.hostname || "")}">pin</button>
+          ${l.static ? `<button class="btn tiny danger" data-unpin="${esc(l.mac)}">unpin</button>` : ""}
+        </td>
+      </tr>`).join("") || `<tr><td colspan="6" class="muted">no leases yet — enable DHCP above and turn your router's server off</td></tr>`;
+  }
 
   /* ---------- tabs & refresh ---------- */
 
   const loaders = {
     overview: loadSummary,
     queries: loadQueries,
+    history: loadHistory,
+    schedules: loadSchedules,
+    dhcp: loadDHCP,
     lists: loadLists,
     rules: loadRules,
     devices: loadDevices,
@@ -375,6 +520,12 @@
       upstream_timeout_ms: Number($("#set-timeout").value),
       block_ttl: Number($("#set-blockttl").value),
       allowed_clients: lines("#set-allowed"),
+      request_dnssec: $("#set-dnssec").checked,
+      doh_server: $("#set-doh-server").checked,
+      conditional_forward: lines("#set-forward").map((l) => {
+        const [domain, upstream] = l.split("=");
+        return { domain: (domain || "").trim(), upstream: (upstream || "").trim() };
+      }).filter((f) => f.domain && f.upstream),
     });
     try {
       await api("/api/settings", { method: "PUT", body: JSON.stringify({ dns, update_interval_hours: Number($("#set-interval").value) }) });
@@ -409,6 +560,24 @@
       } else if (t.dataset.delDevice) {
         await api(`/api/devices?match=${encodeURIComponent(t.dataset.delDevice)}`, { method: "DELETE" });
         toast("Device removed"); loadDevices();
+      } else if (t.dataset.delSchedule) {
+        await api(`/api/schedules?id=${encodeURIComponent(t.dataset.delSchedule)}`, { method: "DELETE" });
+        toast("Schedule removed"); loadSchedules();
+      } else if (t.dataset.toggleSchedule) {
+        const sc = (window.__schedules || []).find((x) => x.id === t.dataset.toggleSchedule);
+        if (sc) {
+          await api("/api/schedules", { method: "POST", body: JSON.stringify({ ...sc, enabled: !sc.enabled }) });
+          toast(sc.enabled ? "Schedule disabled" : "Schedule enabled");
+          loadSchedules();
+        }
+      } else if (t.dataset.pinMac) {
+        await api("/api/dhcp/reservation", { method: "POST", body: JSON.stringify({
+          mac: t.dataset.pinMac, ip: t.dataset.pinIp, hostname: t.dataset.pinHost,
+        })});
+        toast("Address pinned"); loadDHCP();
+      } else if (t.dataset.unpin) {
+        await api(`/api/dhcp/reservation?mac=${encodeURIComponent(t.dataset.unpin)}`, { method: "DELETE" });
+        toast("Reservation removed"); loadDHCP();
       } else if (t.dataset.adopt) {
         selectTab("devices");
         $("#device-match").value = t.dataset.adopt;
@@ -425,6 +594,83 @@
         toast(`${fmt.format(d.domains)} domains active`);
       } catch (err) { toast(err.message, true); }
     }
+  });
+
+  $("#history-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    historyOffset = 0;
+    loadHistory().catch((err) => toast(err.message, true));
+  });
+  $("#h-prev").addEventListener("click", () => {
+    historyOffset = Math.max(0, historyOffset - HISTORY_PAGE);
+    loadHistory().catch(() => {});
+  });
+  $("#h-next").addEventListener("click", () => {
+    historyOffset += HISTORY_PAGE;
+    loadHistory().catch(() => {});
+  });
+
+  $("#schedule-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const days = $("#sc-days").value.split(/[,\s]+/).map((s) => s.trim()).filter(Boolean);
+    try {
+      await api("/api/schedules", { method: "POST", body: JSON.stringify({
+        name: $("#sc-name").value.trim(),
+        group: $("#sc-group").value.trim(),
+        mode: $("#sc-mode").value,
+        days,
+        start: $("#sc-start").value,
+        end: $("#sc-end").value,
+        enabled: true,
+        patterns: $("#sc-patterns").value.split("\n").map((s) => s.trim()).filter(Boolean),
+      })});
+      $("#sc-name").value = ""; $("#sc-patterns").value = "";
+      toast("Schedule saved");
+      loadSchedules();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#dhcp-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const d = await api("/api/dhcp", { method: "POST", body: JSON.stringify({
+        enabled: $("#dh-enabled").checked,
+        server_ip: $("#dh-server").value.trim(),
+        gateway: $("#dh-gateway").value.trim(),
+        netmask: $("#dh-netmask").value.trim(),
+        range_start: $("#dh-start").value.trim(),
+        range_end: $("#dh-end").value.trim(),
+        lease_hours: Number($("#dh-lease").value),
+        domain_name: $("#dh-domain").value.trim(),
+      })});
+      toast(d.restart_required ? "Saved — restart adblockerpro to apply" : "DHCP settings saved");
+      loadDHCP();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#reservation-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/dhcp/reservation", { method: "POST", body: JSON.stringify({
+        mac: $("#res-mac").value.trim(),
+        ip: $("#res-ip").value.trim(),
+        hostname: $("#res-host").value.trim(),
+      })});
+      $("#res-mac").value = ""; $("#res-ip").value = ""; $("#res-host").value = "";
+      toast("Address pinned");
+      loadDHCP();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#restore-file").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    try {
+      const d = await api("/api/restore", { method: "POST", body: await file.text() });
+      toast(`Restored ${d.rules} rules, ${d.devices} devices, ${d.schedules} schedules`);
+      refresh();
+    } catch (err) { toast(err.message, true); }
+    e.target.value = "";
   });
 
   $("#login-form").addEventListener("submit", async (e) => {
