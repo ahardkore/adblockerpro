@@ -33,7 +33,7 @@ func presets() []preset {
 		{
 			ID:      "gentle",
 			Title:   "Gentle",
-			Summary: "Blocks the obvious ads. Nothing ever breaks.",
+			Summary: "Blocks obvious ads with the lowest risk of site breakage.",
 			Detail:  "Two conservative lists, roughly 150 000 domains. Pick this if someone in the house will complain loudly the first time a page misbehaves.",
 			Lists: []string{
 				"https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",

@@ -7,18 +7,6 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-  /* ---------- basic accessibility ---------- */
-
-  const firstSection = $("body > section");
-  if (firstSection) {
-    firstSection.id = firstSection.id || "main-content";
-    const skip = document.createElement("a");
-    skip.className = "skip-link";
-    skip.href = `#${firstSection.id}`;
-    skip.textContent = "Skip to content";
-    document.body.prepend(skip);
-  }
-
   /* ---------- theme toggle (dark ⇄ light, remembered) ---------- */
 
   const root = document.documentElement;
@@ -41,6 +29,14 @@
       try { localStorage.setItem("abp-theme", next); } catch (_) {}
       paintTheme();
     });
+    const preference = window.matchMedia("(prefers-color-scheme: light)");
+    preference.addEventListener("change", (event) => {
+      try {
+        if (localStorage.getItem("abp-theme")) return;
+      } catch (_) { return; }
+      root.setAttribute("data-theme", event.matches ? "light" : "dark");
+      paintTheme();
+    });
   }
 
   /* ---------- mobile navigation ---------- */
@@ -54,9 +50,11 @@
     if (mobile.matches) {
       const open = navBtn.getAttribute("aria-expanded") === "true";
       nav.hidden = !open;
+      navBtn.setAttribute("aria-label", open ? "Close menu" : "Open menu");
     } else {
       nav.hidden = false;
       navBtn.setAttribute("aria-expanded", "false");
+      navBtn.setAttribute("aria-label", "Open menu");
     }
   }
 
@@ -81,23 +79,39 @@
         navBtn.focus();
       }
     });
+    document.addEventListener("click", (e) => {
+      if (mobile.matches && navBtn.getAttribute("aria-expanded") === "true" &&
+          !nav.contains(e.target) && !navBtn.contains(e.target)) {
+        navBtn.setAttribute("aria-expanded", "false");
+        syncNav();
+      }
+    });
     mobile.addEventListener("change", syncNav);
     syncNav();
   }
 
   /* ---------- copy buttons on every code block ---------- */
 
+  const copyStatus = document.createElement("span");
+  copyStatus.className = "visually-hidden";
+  copyStatus.setAttribute("aria-live", "polite");
+  document.body.appendChild(copyStatus);
+
   $$("pre").forEach((pre) => {
     const btn = document.createElement("button");
     btn.className = "copy";
     btn.type = "button";
     btn.textContent = "copy";
+    btn.setAttribute("aria-label", "Copy code");
     btn.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(pre.innerText.replace(/\ncopy$/, "").trim());
+        const code = $("code", pre);
+        await navigator.clipboard.writeText((code ? code.textContent : pre.textContent).trim());
         btn.textContent = "copied";
+        copyStatus.textContent = "Code copied to clipboard";
       } catch (_) {
         btn.textContent = "select it by hand";
+        copyStatus.textContent = "Could not copy automatically; select the code manually";
       }
       setTimeout(() => (btn.textContent = "copy"), 1800);
     });
@@ -108,7 +122,21 @@
 
   const here = location.pathname.split("/").pop() || "index.html";
   $$(".site-nav a").forEach((a) => {
-    if ((a.getAttribute("href") || "").split("/").pop() === here) a.classList.add("current");
+    if ((a.getAttribute("href") || "").split("/").pop() === here) {
+      a.classList.add("current");
+      a.setAttribute("aria-current", "page");
+    }
+  });
+
+  /* ---------- responsive data tables ---------- */
+
+  $$("table.compare").forEach((table) => {
+    const labels = $$("thead th", table).map((th) => th.textContent.trim());
+    if (!labels.length) return;
+    table.classList.add("responsive");
+    $$("tbody tr", table).forEach((row) => {
+      $$("td", row).forEach((cell, index) => cell.dataset.label = labels[index] || "");
+    });
   });
 
   /* ---------- shopping list ---------- */

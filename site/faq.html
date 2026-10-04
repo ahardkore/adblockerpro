@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Help &amp; FAQ — adblockerpro</title>
 <meta name="description" content="Troubleshooting a network-wide ad blocker: nothing is being blocked, a site broke, the dashboard won't load, how to undo it all." />
+<link rel="canonical" href="https://ahardkore.github.io/adblockerpro/faq.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="adblockerpro" />
+<meta property="og:title" content="Help & FAQ — adblockerpro" />
+<meta property="og:description" content="Troubleshooting a network-wide ad blocker: fixing DNS, broken sites, dashboard access, IPv6 bypasses, and uninstalling safely." />
+<meta property="og:url" content="https://ahardkore.github.io/adblockerpro/faq.html" />
+<meta property="og:image" content="https://ahardkore.github.io/adblockerpro/img/hero.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="stylesheet" href="styles.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="img/app-icon.png" /><text y='.9em' font-size='90'>🛡️</text></svg>" />
 <meta name="theme-color" content="#090d19" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)" />
 <meta name="color-scheme" content="dark light" />
@@ -22,17 +31,19 @@
     }
   })();
 </script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Will this block YouTube ads?","acceptedAnswer":{"@type":"Answer","text":"No, and nothing that works this way can. YouTube serves its ads from the same addresses as the videos, so blocking the address blocks YouTube. For YouTube specifically you still want a browser extension or a premium subscription."}},{"@type":"Question","name":"Will it slow down my internet?","acceptedAnswer":{"@type":"Answer","text":"The opposite, slightly. Look-ups are answered from the Pi's memory in under a millisecond, popular addresses are refreshed before they expire, and the ads that never download are bandwidth you keep."}},{"@type":"Question","name":"What happens if the Pi dies or I unplug it?","acceptedAnswer":{"@type":"Answer","text":"Devices pointed at it lose DNS, which looks like \u201cno internet\u201d. Set the router's DNS back to automatic and everything returns immediately. If you want belt-and-braces, run the Pi's own DHCP server \u2014 then there is one place to change, not many."}},{"@type":"Question","name":"Is my browsing history being sent anywhere?","acceptedAnswer":{"@type":"Answer","text":"No. There is no account, no cloud and no telemetry. Look-ups are stored on the Pi's own card (30 days by default) purely so you can look at the graphs. Turn the history off in Settings and nothing is written at all. You can also store client addresses hashed."}},{"@type":"Question","name":"Does it work on Wi-Fi, or does it need a cable?","acceptedAnswer":{"@type":"Answer","text":"Both work. A cable is more reliable, and \u201cthe thing the whole house depends on for DNS\u201d is exactly the device you want wired."}},{"@type":"Question","name":"What about phones on mobile data?","acceptedAnswer":{"@type":"Answer","text":"Off your Wi-Fi they are not filtered. You can enable DNS-over-HTTPS in Settings and point a phone at the Pi from anywhere, but that means exposing it to the internet \u2014 only do that if you understand the trade-off."}},{"@type":"Question","name":"Why do some devices bypass the filter over IPv6?","acceptedAnswer":{"@type":"Answer","text":"Your router may advertise an IPv6 DNS resolver separately from its IPv4 DHCP setting. In the router's IPv6, router-advertisement (RA), or DHCPv6 settings, advertise the Pi's IPv6 address as DNS. If the router cannot do that, disable its IPv6 DNS advertisement\u2014not IPv6 across your whole network\u2014and reconnect the affected devices."}},{"@type":"Question","name":"Can I block specific sites, like social media at homework time?","acceptedAnswer":{"@type":"Answer","text":"Yes \u2014 Rules for permanent blocks, Schedules for time windows, and both can target a group of devices so the adults are unaffected."}},{"@type":"Question","name":"How is this different from Pi-hole?","acceptedAnswer":{"@type":"Answer","text":"Same idea, different implementation. This one is a single Go program with no dependencies, which makes it small and simple to install, and it adds a few things Pi-hole doesn't do natively: encrypted upstream look-ups, scheduled rules, a cache that survives a reboot. Pi-hole is older and more battle-tested, and does its own DNSSEC validation. Both are free; neither will mind if you try the other."}},{"@type":"Question","name":"Can I run it on something other than a Pi?","acceptedAnswer":{"@type":"Answer","text":"Yes. Any Debian or Ubuntu machine, including an old laptop or a mini PC, and the installer handles 64-bit PCs as well as every Pi."}},{"@type":"Question","name":"How do I undo the whole thing?","acceptedAnswer":{"@type":"Answer","text":"First set your router's DNS back to automatic and reconnect its clients. Then download the current installer and run its uninstall mode: curl -fsSLO https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh sudo bash install.sh --uninstall This removes the service and binaries and restores the system DNS configuration changed by the installer. Your settings and history remain in /etc/adblockerpro and /var/lib/adblockerpro in case you reinstall; delete those directories manually if you do not want to keep them."}},{"@type":"Question","name":"How do I update it?","acceptedAnswer":{"@type":"Answer","text":"Re-run the installer; it replaces the binary and restarts the service, keeping your settings: curl -fsSLO https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh sudo bash install.sh"}},{"@type":"Question","name":"I forgot the dashboard password.","acceptedAnswer":{"@type":"Answer","text":"On the Pi: sudo adblockerpro -set-password , then press Enter on an empty line to remove it entirely."}}]}</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
-    <nav class="site-nav" id="site-nav">
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
       <a href="index.html">Home</a>
       <a href="hardware.html">What you need</a>
       <a href="setup.html">Setup guide</a>
-      <a href="faq.html">Help &amp; FAQ</a>
+      <a href="faq.html" aria-current="page">Help &amp; FAQ</a>
       <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
     </nav>
     <div class="head-tools">
@@ -41,16 +52,17 @@
         <span aria-hidden="true" class="theme-ico">🌙</span>
       </button>
       <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
-              aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+              aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="bars" aria-hidden="true"></span>
       </button>
     </div>
   </div>
 </header>
 
+<main id="main-content">
 <section>
   <div class="wrap">
-    <h2 class="section-title">If something is wrong, start here</h2>
+    <h1 class="section-title">If something is wrong, start here</h1>
     <p class="section-sub">Nine times out of ten it is one of these three.</p>
 
     <div class="steps">
@@ -76,7 +88,7 @@
         <h3>“The whole internet died”</h3>
         <p>If the Pi is unplugged, off, or its address changed, devices pointed at it have no phone book at all.</p>
         <ul>
-          <li>Short term: set your router's DNS back to <i>automatic</i>. Everything works again instantly.</li>
+          <li>Short term: set your router's DNS back to <i>automatic</i>, then reconnect or reboot clients so they renew their settings. Cached settings may take a little while to expire.</li>
           <li>Then: reserve the Pi's address in your router (step 6 of the guide) so it can never move.</li>
           <li>Check the Pi is alive: <code>ping adblockerpro.local</code>.</li>
         </ul>
@@ -115,7 +127,10 @@
       <p>Off your Wi-Fi they are not filtered. You can enable DNS-over-HTTPS in Settings and point a phone at
       the Pi from anywhere, but that means exposing it to the internet — only do that if you understand the trade-off.</p></details>
 
-    <details class="faq"><summary>Can I block specific sites, like social media at homework time?</summary>
+    <details class="faq"><summary>Why do some devices bypass the filter over IPv6?</summary>
+<p>Your router may advertise an IPv6 DNS resolver separately from its IPv4 DHCP setting. In the router's IPv6, router-advertisement (RA), or DHCPv6 settings, advertise the Pi's IPv6 address as DNS. If the router cannot do that, disable its IPv6 DNS advertisement—not IPv6 across your whole network—and reconnect the affected devices.</p></details>
+
+<details class="faq"><summary>Can I block specific sites, like social media at homework time?</summary>
       <p>Yes — <b>Rules</b> for permanent blocks, <b>Schedules</b> for time windows, and both can target
       a group of devices so the adults are unaffected.</p></details>
 
@@ -129,14 +144,16 @@
       <p>Yes. Any Debian or Ubuntu machine, including an old laptop or a mini PC, and the installer
       handles 64-bit PCs as well as every Pi.</p></details>
 
-    <details class="faq"><summary>How do I undo the whole thing?</summary>
-      <p>Set your router's DNS back to automatic, then on the Pi:</p>
-      <pre><code>sudo systemctl disable --now adblockerpro</code></pre>
-      <p>That's it. Nothing else on your network was modified.</p></details>
+<details class="faq"><summary>How do I undo the whole thing?</summary>
+<p>First set your router's DNS back to automatic and reconnect its clients. Then download the current installer and run its uninstall mode:</p>
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh
+sudo bash install.sh --uninstall</code></pre>
+<p>This removes the service and binaries and restores the system DNS configuration changed by the installer. Your settings and history remain in <code>/etc/adblockerpro</code> and <code>/var/lib/adblockerpro</code> in case you reinstall; delete those directories manually if you do not want to keep them.</p></details>
 
     <details class="faq"><summary>How do I update it?</summary>
       <p>Re-run the installer; it replaces the binary and restarts the service, keeping your settings:</p>
-      <pre><code>curl -fsSL https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh | sudo bash</code></pre></details>
+      <pre><code>curl -fsSLO https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh
+sudo bash install.sh</code></pre></details>
 
     <details class="faq"><summary>I forgot the dashboard password.</summary>
       <p>On the Pi: <code>sudo adblockerpro -set-password</code>, then press Enter on an empty line to remove it entirely.</p></details>
@@ -159,6 +176,8 @@ journalctl -u adblockerpro -f    # live logs</code></pre>
       with the output of <code>abpctl status</code> and we'll take a look.</p>
   </div>
 </section>
+
+</main>
 
 <footer class="site-foot">
   <div class="wrap">
