@@ -348,7 +348,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	if ok, wait := s.throttle.Allowed(ip); !ok {
 		w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())+1))
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"error":     "too many attempts",
+			"error":      "too many attempts",
 			"retry_in_s": int(wait.Seconds()) + 1,
 		})
 		return
@@ -437,7 +437,7 @@ func (s *Server) handlePassword(w http.ResponseWriter, r *http.Request) {
 	}
 	s.sessions.RevokeAll()
 	writeJSON(w, http.StatusOK, map[string]any{
-		"status":      "ok",
+		"status":       "ok",
 		"password_set": s.Config.Web.AdminPasswordHash != "",
 	})
 }
@@ -723,8 +723,8 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			DNS                 *config.DNSConfig `json:"dns"`
 			UpdateIntervalHours *int              `json:"update_interval_hours"`
 			Web                 *struct {
-				SessionHours *int               `json:"session_hours"`
-				TLS          *config.TLSConfig  `json:"tls"`
+				SessionHours *int              `json:"session_hours"`
+				TLS          *config.TLSConfig `json:"tls"`
 			} `json:"web"`
 		}
 		if err := decode(r, &body); err != nil {
@@ -771,9 +771,9 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 			s.Log.Warn("save config", "err", err)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"status":       "ok",
-			"dns":          s.Config.DNS,
-			"tls":          s.Config.Web.TLS,
+			"status":        "ok",
+			"dns":           s.Config.DNS,
+			"tls":           s.Config.Web.TLS,
 			"needs_restart": s.Config.Web.TLS != oldWeb.TLS,
 		})
 	default:

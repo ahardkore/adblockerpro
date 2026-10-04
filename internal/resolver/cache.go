@@ -32,12 +32,12 @@ type cacheEntry struct {
 // Cache is a bounded LRU of raw DNS responses. Entries are stored verbatim
 // and aged on the way out, so replays carry honest TTLs.
 type Cache struct {
-	mu      sync.Mutex
-	max     int
-	minTTL  time.Duration
-	maxTTL  time.Duration
-	items   map[string]*list.Element
-	order   *list.List
+	mu         sync.Mutex
+	max        int
+	minTTL     time.Duration
+	maxTTL     time.Duration
+	items      map[string]*list.Element
+	order      *list.List
 	hits       uint64
 	misses     uint64
 	stale      uint64
@@ -207,14 +207,14 @@ func (c *Cache) Flush() int {
 
 // CacheStats is a snapshot of cache counters.
 type CacheStats struct {
-	Entries   int    `json:"entries"`
-	Prefetched uint64 `json:"prefetched"`
-	Max     int     `json:"max"`
-	Hits    uint64  `json:"hits"`
-	Misses  uint64  `json:"misses"`
-	Stale   uint64  `json:"stale"`
-	Evicted uint64  `json:"evicted"`
-	HitRate float64 `json:"hit_rate"`
+	Entries    int     `json:"entries"`
+	Prefetched uint64  `json:"prefetched"`
+	Max        int     `json:"max"`
+	Hits       uint64  `json:"hits"`
+	Misses     uint64  `json:"misses"`
+	Stale      uint64  `json:"stale"`
+	Evicted    uint64  `json:"evicted"`
+	HitRate    float64 `json:"hit_rate"`
 }
 
 // Stats returns the current counters.
@@ -224,11 +224,11 @@ func (c *Cache) Stats() CacheStats {
 	s := CacheStats{
 		Entries:    c.order.Len(),
 		Prefetched: c.prefetched,
-		Max:     c.max,
-		Hits:    c.hits,
-		Misses:  c.misses,
-		Stale:   c.stale,
-		Evicted: c.evicted,
+		Max:        c.max,
+		Hits:       c.hits,
+		Misses:     c.misses,
+		Stale:      c.stale,
+		Evicted:    c.evicted,
 	}
 	if total := s.Hits + s.Misses; total > 0 {
 		s.HitRate = float64(s.Hits) / float64(total) * 100
