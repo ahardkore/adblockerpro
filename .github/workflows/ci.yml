@@ -6,9 +6,6 @@ on:
   pull_request:
   workflow_dispatch:
 
-permissions:
-  contents: write
-
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -44,12 +41,9 @@ jobs:
         run: |
           unformatted="$(gofmt -l .)"
           if [ -n "$unformatted" ]; then
-            echo "gofmt rewrote:"; echo "$unformatted"
-            gofmt -w .
-            git config user.name "github-actions[bot]"
-            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit -am "CI: gofmt"
-            git push origin HEAD:${GITHUB_REF_NAME}
+            echo "These files need gofmt -w:"; echo "$unformatted"
+            gofmt -d . | head -c 3000
+            exit 1
           fi
 
       - uses: actions/upload-artifact@v4
