@@ -1,0 +1,15 @@
+# build output
+/adblockerpro
+/dist/
+
+# local development state
+/dev-data/
+/dev-config.json
+*.list
+*.tmp
+
+# editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/

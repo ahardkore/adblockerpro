@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>What you need — adblockerpro</title>
+<meta name="description" content="The exact shopping list for a network-wide ad blocker: which Raspberry Pi, which memory card, which power supply, and the mistakes that cost people an afternoon." />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
+    <nav class="site-nav">
+      <a href="index.html">Home</a>
+      <a href="hardware.html">What you need</a>
+      <a href="setup.html">Setup guide</a>
+      <a href="faq.html">Help &amp; FAQ</a>
+      <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">What you need</h2>
+    <p class="section-sub">
+      Five small things. Nothing here is specialist — a Raspberry Pi is a $45 computer
+      the size of a credit card, sold everywhere. Pick one of the three kits below;
+      they are all the same project, just different budgets.
+    </p>
+    <img src="img/kit.jpg" alt="A Raspberry Pi board, microSD card, USB-C power supply, ethernet cable and aluminium case laid out in a row" width="1024" height="440" style="border-radius:16px;border:1px solid #243057;margin-bottom:28px" />
+
+    <div id="shop"><p class="disclosure">Loading the shopping list…</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Things you almost certainly already have</h2>
+    <div class="cards">
+      <div class="card"><h3>A computer</h3><p>Windows, Mac or Linux — used once, to write the operating system onto the memory card.</p></div>
+      <div class="card"><h3>Your router's password</h3><p>Usually printed on a sticker on the router itself. You need it for one setting.</p></div>
+      <div class="card"><h3>A free socket near the router</h3><p>The Pi draws about as much power as a phone charger and lives there permanently.</p></div>
+      <div class="card"><h3>Wi-Fi or a spare LAN port</h3><p>Wired is better and more reliable, but Wi-Fi genuinely works fine.</p></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">The four mistakes that cost people an afternoon</h2>
+    <div class="callout warn"><b>A phone charger instead of a real power supply.</b>
+      The Pi needs a steady 5 V at 3 A. Underpowered Pis behave strangely in ways that look like software bugs: random freezes, corrupted cards, Wi-Fi dropping.</div>
+    <div class="callout warn"><b>A cheap no-name memory card.</b>
+      The Pi writes constantly. Buy a branded A2-rated card (SanDisk, Samsung) — $10 instead of $4, and it lasts years instead of months.</div>
+    <div class="callout warn"><b>The wrong case for the board.</b>
+      Pi 4, Pi 5 and Pi Zero are all different shapes. Check the case lists your exact model.</div>
+    <div class="callout warn"><b>Buying a Pi 5 with 8 GB “to be safe”.</b>
+      This software uses under 100 MB of memory. Spend the difference on a good power supply and a proper card.</div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Which Pi should I get?</h2>
+    <table class="compare">
+      <tr><th>Board</th><th>Good for</th><th>Notes</th></tr>
+      <tr><td>Pi Zero 2 W</td><td>Any normal home</td><td>Cheapest. Wi-Fi only unless you add a USB adapter. Blocklist updates take a few minutes instead of seconds.</td></tr>
+      <tr><td>Pi 4 (2 GB)</td><td>The sweet spot</td><td>Wired ethernet, plenty of headroom, easy to find. Recommended.</td></tr>
+      <tr><td>Pi 5</td><td>If you have one already</td><td>Works perfectly, completely unnecessary for this job.</td></tr>
+      <tr><td>Pi 3 / 3B+</td><td>Reusing an old one</td><td>Totally fine. Free is the best price.</td></tr>
+      <tr><td>Old laptop or mini PC</td><td>Also fine</td><td>Anything that runs Debian or Ubuntu works — the installer handles x86 too.</td></tr>
+    </table>
+    <div class="callout">
+      <b>Already own a spare Pi?</b> Then you need nothing at all.
+      Go straight to the <a href="setup.html">setup guide</a>.
+    </div>
+  </div>
+</section>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>adblockerpro — free and open source, MIT licensed.</span>
+    <span>Some links on this page are Amazon affiliate links.</span>
+    <span><a href="setup.html">Next: the setup guide →</a></span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

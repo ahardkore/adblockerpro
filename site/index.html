@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>adblockerpro — block ads on every device in your house</title>
+<meta name="description" content="Build a small box that blocks ads and trackers for every device on your home network — smart TVs, phones, consoles, streaming sticks. No subscription, no apps to install, about an hour of your time." />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
+    <nav class="site-nav">
+      <a href="index.html">Home</a>
+      <a href="hardware.html">What you need</a>
+      <a href="setup.html">Setup guide</a>
+      <a href="faq.html">Help &amp; FAQ</a>
+      <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <div class="badges">
+        <span class="badge">Free &amp; open source</span>
+        <span class="badge">No subscription</span>
+        <span class="badge">Nothing to install on your devices</span>
+        <span class="badge">~1 hour, start to finish</span>
+      </div>
+      <h1>Block ads on every screen in your home.</h1>
+      <p class="lead">
+        Including the ones you can't install an ad blocker on: the smart TV, the
+        streaming stick, the games console, your kid's tablet, the fridge.
+        One small box plugged into your router does it for all of them at once.
+      </p>
+      <div class="hero-cta">
+        <a class="btn primary" href="setup.html">Start the walkthrough →</a>
+        <a class="btn" href="hardware.html">See what to buy</a>
+      </div>
+      <p class="hero-note">You will need a Raspberry Pi (about $45, or $15 for the little one),
+        a memory card and a power supply. That is the whole shopping list.</p>
+    </div>
+    <div>
+      <img src="img/hero.jpg" alt="A Raspberry Pi next to a home router, filtering ads out of the traffic from a TV, phone, laptop and games console" width="1024" height="576" />
+    </div>
+  </div>
+</section>
+
+<section id="what">
+  <div class="wrap">
+    <h2>What it actually does</h2>
+    <p class="section-sub">
+      Every time any device looks up an internet address, it asks a “DNS server”
+      — the internet's phone book. Normally that is your broadband provider.
+      This box becomes your phone book instead.
+    </p>
+    <div class="cards">
+      <div class="card">
+        <span class="ico">📺</span>
+        <h3>Your TV asks for an ad</h3>
+        <p>“Where is <code>ads.example-tracker.com</code>?” — the same question an app or a web page asks dozens of times a minute.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🛡️</span>
+        <h3>The box checks a list</h3>
+        <p>Hundreds of thousands of known ad and tracker addresses, refreshed daily from public lists maintained by volunteers.</p>
+      </div>
+      <div class="card">
+        <span class="ico">🚫</span>
+        <h3>It answers “nowhere”</h3>
+        <p>The ad is never fetched: it uses no bandwidth, it loads no tracker, and the page or app just carries on without it.</p>
+      </div>
+      <div class="card">
+        <span class="ico">⚡</span>
+        <h3>Everything else gets faster</h3>
+        <p>Real addresses are answered from memory and refreshed before they go stale, so ordinary browsing feels a touch snappier.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="expect">
+  <div class="wrap">
+    <h2>Honest expectations</h2>
+    <p class="section-sub">So you are not disappointed on day one.</p>
+    <table class="compare">
+      <tr><th>What it does well</th><th>What it can't do</th></tr>
+      <tr>
+        <td>Banner ads, pop-ups, tracking pixels and telemetry on every device, with nothing installed on them.</td>
+        <td><b>YouTube ads.</b> They come from the same addresses as the videos, so no DNS filter can remove them.</td>
+      </tr>
+      <tr>
+        <td>Smart-TV and streaming-stick “phone home” traffic, which is where a lot of the creepiness lives.</td>
+        <td><b>Ads baked into a video stream</b> (Hulu, live TV). The ad is part of the picture.</td>
+      </tr>
+      <tr>
+        <td>Ads inside most mobile apps and games — often the single biggest win.</td>
+        <td><b>Cosmetic tidy-up.</b> A browser extension can hide the empty space; this can only stop the download.</td>
+      </tr>
+      <tr>
+        <td>Works on guest Wi-Fi, consoles, e-readers, anything that uses your router.</td>
+        <td><b>Devices that ignore your router</b> (some Chromecasts, phones with private DNS on). The guide covers how to force those too.</td>
+      </tr>
+    </table>
+    <div class="callout good">
+      <b>Typical result:</b> 15–35% of all look-ups blocked, several hundred megabytes of
+      ads not downloaded per week, and a noticeably quieter smart TV.
+    </div>
+  </div>
+</section>
+
+<section id="dashboard">
+  <div class="wrap">
+    <h2>You get a dashboard, not a config file</h2>
+    <p class="section-sub">
+      Open <code>http://adblockerpro.local:8080</code> from any device in the house.
+      The first time you do, a five-minute wizard walks you through the whole thing —
+      it even tests your router change for you and tells you in plain English what to fix.
+    </p>
+    <div class="cards">
+      <div class="card"><h3>See what's happening</h3><p>Live list of every look-up, which device asked, and whether it was blocked.</p></div>
+      <div class="card"><h3>Fix things in one click</h3><p>Something stopped working? Find it in the log, press <b>allow</b>. Done, instantly.</p></div>
+      <div class="card"><h3>Per-device rules</h3><p>Name your gadgets, give the kids' tablets a bedtime, pause the filter for one device.</p></div>
+      <div class="card"><h3>Nothing leaves the house</h3><p>No account, no cloud, no telemetry. The history lives on your own memory card.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="start">
+  <div class="wrap">
+    <h2>Ready?</h2>
+    <p class="section-sub">Three pages, in order. Nobody needs to know what a terminal is — but you will paste one line into one.</p>
+    <div class="steps">
+      <div class="step">
+        <h3>Buy the bits <span class="time">10 minutes</span></h3>
+        <p>A Pi, a card, a power supply, a short network cable. We list exactly what works and what to avoid.</p>
+        <p><a class="btn small" href="hardware.html">Open the shopping list →</a></p>
+      </div>
+      <div class="step">
+        <h3>Follow the walkthrough <span class="time">45 minutes, mostly waiting</span></h3>
+        <p>Write the operating system to the card, plug the Pi in, paste one install command, change one setting on your router.</p>
+        <p><a class="btn small" href="setup.html">Open the setup guide →</a></p>
+      </div>
+      <div class="step">
+        <h3>Forget about it <span class="time">forever</span></h3>
+        <p>It updates its own blocklists daily and restarts itself if anything goes wrong. Check the dashboard when you're curious.</p>
+        <p><a class="btn small" href="faq.html">Something broke? →</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>adblockerpro — free and open source, MIT licensed.</span>
+    <span>Some links on this site are Amazon affiliate links.</span>
+    <span><a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">Source on GitHub</a></span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

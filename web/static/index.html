@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>adblockerpro</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form class="login-card" id="login-form">
+    <h1>🛡️ adblockerpro</h1>
+    <p>This dashboard is protected. Enter the password you chose during setup.</p>
+    <input type="password" id="login-token" placeholder="password or admin token" autocomplete="current-password" />
+    <button type="submit">Unlock</button>
+    <span class="error" id="login-error"></span>
+  </form>
+</div>
+
+
+<!-- FIRST-RUN WIZARD -->
+<div id="wizard" class="wizard hidden">
+  <div class="wizard-card">
+    <div class="wizard-head">
+      <div>
+        <h2 id="wiz-title">Welcome</h2>
+        <p class="wizard-sub" id="wiz-sub">Let's get your home ad-free.</p>
+      </div>
+      <button class="btn ghost tiny" id="wiz-skip" type="button">Skip setup</button>
+    </div>
+
+    <ol class="wizard-steps" id="wiz-steps">
+      <li data-step="0" class="on">Welcome</li>
+      <li data-step="1">Protection level</li>
+      <li data-step="2">Your router</li>
+      <li data-step="3">Test</li>
+      <li data-step="4">Password</li>
+    </ol>
+
+    <div class="wizard-body">
+      <!-- 0: welcome -->
+      <section class="wiz-pane on" data-pane="0">
+        <p class="lead">This little box is now the phone book your home network uses.
+        Every time a TV, phone or laptop looks up an address, it asks this Pi.
+        When the address belongs to an ad or a tracker, the Pi simply says
+        <b>“that doesn’t exist”</b> — so the ad never loads, on every device,
+        with nothing to install on any of them.</p>
+        <div class="wiz-grid">
+          <div class="wiz-tile"><span class="tile-ico">1️⃣</span><b>Choose how strict</b><span>Pick a protection level. You can change it any time.</span></div>
+          <div class="wiz-tile"><span class="tile-ico">2️⃣</span><b>Tell your router</b><span>One setting on your router points the whole house here.</span></div>
+          <div class="wiz-tile"><span class="tile-ico">3️⃣</span><b>Press test</b><span>We check it for you and say exactly what to fix.</span></div>
+        </div>
+        <p class="muted">Takes about five minutes. Nothing here can break your network permanently —
+        undo it by putting your router's DNS setting back to “automatic”.</p>
+      </section>
+
+      <!-- 1: preset -->
+      <section class="wiz-pane" data-pane="1">
+        <p class="lead">How aggressive should the blocking be?</p>
+        <div id="wiz-presets" class="preset-list"></div>
+        <p class="muted" id="wiz-preset-status">Lists download in the background — it takes a minute or two on a Pi Zero.</p>
+      </section>
+
+      <!-- 2: router -->
+      <section class="wiz-pane" data-pane="2">
+        <p class="lead">Tell your router to use this Pi as its DNS server.</p>
+        <div class="bigaddr">
+          <span class="label">Type this address into your router</span>
+          <span class="addr" id="wiz-ip">…</span>
+          <button class="btn tiny" id="wiz-copy" type="button">Copy</button>
+        </div>
+        <p>Log in to your router (usually <b id="wiz-gateway">192.168.1.1</b> in a browser),
+        find <b>DHCP</b> or <b>LAN settings</b>, and set the <b>DNS server</b> to the address above.
+        Save, then restart one device to test.</p>
+        <details class="howto-box">
+          <summary>Show me where it is on my router</summary>
+          <ul class="router-list">
+            <li><b>BT Smart Hub / EE:</b> Advanced settings → Home network → LAN IP → “Primary DNS”.</li>
+            <li><b>Virgin Media Hub:</b> Advanced settings → DHCP → “Primary DNS server”.</li>
+            <li><b>Netgear / Nighthawk:</b> Internet → “Use these DNS servers” → Primary DNS.</li>
+            <li><b>TP-Link:</b> Network → DHCP Server → “Primary DNS”.</li>
+            <li><b>ASUS:</b> LAN → DHCP Server → “DNS Server 1”, and set “Advertise router's IP…” to No.</li>
+            <li><b>Linksys:</b> Connectivity → Local Network → DHCP Server → Static DNS 1.</li>
+            <li><b>Google Nest Wifi:</b> Wi-Fi app → Settings → Advanced networking → DNS → Custom.</li>
+            <li><b>Eero (needs Eero Plus):</b> Settings → Network settings → DNS → Custom.</li>
+            <li><b>Xfinity / Sky / locked routers:</b> you often cannot change DNS. Use the Pi's own
+              DHCP server instead: turn your router's DHCP off, then open the <b>DHCP</b> tab here.</li>
+          </ul>
+        </details>
+        <p class="muted">Only one DNS server should be listed. If your router insists on two,
+        put this address in both boxes — otherwise devices will quietly use the other one and see ads.</p>
+      </section>
+
+      <!-- 3: test -->
+      <section class="wiz-pane" data-pane="3">
+        <p class="lead">Let's check it is really working.</p>
+        <button class="btn primary" id="wiz-test" type="button">Run the test</button>
+        <div id="wiz-test-results" class="checklist"></div>
+        <p class="muted">A device only starts using the new DNS after its lease renews.
+        Turning its Wi-Fi off and on again (or rebooting it) is the quickest way.</p>
+      </section>
+
+      <!-- 4: password -->
+      <section class="wiz-pane" data-pane="4">
+        <p class="lead">Finally, protect this dashboard with a password.</p>
+        <p>Anyone on your Wi-Fi can open this page. A password stops a guest (or a curious
+        teenager) from switching the filter off. You can skip it and add one later in Settings.</p>
+        <div class="wiz-form">
+          <label>Password <input type="password" id="wiz-pass" placeholder="at least 8 characters" autocomplete="new-password" /></label>
+          <label>Repeat <input type="password" id="wiz-pass2" placeholder="again" autocomplete="new-password" /></label>
+        </div>
+        <span class="error" id="wiz-pass-error"></span>
+        <p class="muted">Write it down somewhere. If you lose it, run
+        <code>sudo adblockerpro -set-password</code> on the Pi to set a new one.</p>
+      </section>
+    </div>
+
+    <div class="wizard-foot">
+      <button class="btn ghost" id="wiz-back" type="button">Back</button>
+      <span class="grow"></span>
+      <button class="btn primary" id="wiz-next" type="button">Get started</button>
+    </div>
+  </div>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🛡️</span>
+    <div>
+      <h1>adblockerpro</h1>
+      <span class="sub" id="dns-addr">network-wide ad blocking</span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="pill" id="status-pill">connecting…</span>
+    <button class="btn" id="btn-pause">Pause 5 min</button>
+    <button class="btn" id="btn-update">Update lists</button>
+    <button class="btn ghost" id="btn-flush">Flush cache</button>
+    <button class="btn ghost" id="btn-help" title="Explain this page in plain English">? Help</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="queries">Query log</button>
+  <button class="tab" data-tab="history">History</button>
+  <button class="tab" data-tab="lists">Blocklists</button>
+  <button class="tab" data-tab="rules">Rules</button>
+  <button class="tab" data-tab="schedules">Schedules</button>
+  <button class="tab" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="dhcp">DHCP</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
+
+<!-- HELP DRAWER -->
+<aside id="help-drawer" class="drawer hidden">
+  <div class="drawer-head">
+    <h2>Plain English help</h2>
+    <button class="btn ghost tiny" id="help-close" type="button">Close</button>
+  </div>
+  <div class="drawer-body">
+    <h3>The five-minute version</h3>
+    <ol class="howto">
+      <li>Your router tells every device “ask this Pi for addresses”.</li>
+      <li>The Pi checks the address against lists of known ad and tracker servers.</li>
+      <li>Ads get a dead end. Everything else gets a real answer, cached so it's fast.</li>
+    </ol>
+
+    <h3>Something stopped working</h3>
+    <ol class="howto">
+      <li>Open <b>Query log</b> and type the device or app name in the filter.</li>
+      <li>Find a red <b>blocked</b> line that looks related.</li>
+      <li>Press <b>allow</b> next to it. Try the app again.</li>
+      <li>Still broken? Press <b>Pause 5 min</b> at the top. If it works while paused, it was us; if not, it wasn't.</li>
+    </ol>
+
+    <h3>Words you'll see</h3>
+    <dl class="glossary">
+      <dt>DNS</dt><dd>The internet's phone book: turns <code>netflix.com</code> into a number computers can call.</dd>
+      <dt>Query</dt><dd>One look-up in that phone book. A single web page can cause dozens.</dd>
+      <dt>Sinkhole</dt><dd>The dead-end answer we give for ads. “0.0.0.0” means “nowhere”.</dd>
+      <dt>Upstream</dt><dd>The public resolver we ask about everything that isn't blocked (Cloudflare, Quad9…).</dd>
+      <dt>Cache</dt><dd>Answers we remember for a while, so repeat look-ups are instant.</dd>
+      <dt>DHCP</dt><dd>How devices get their network settings. Whoever runs DHCP decides which DNS they use.</dd>
+      <dt>DoH</dt><dd>DNS-over-HTTPS: look-ups encrypted so your broadband provider can't read them.</dd>
+      <dt>TTL</dt><dd>How long an answer stays fresh before we ask again.</dd>
+      <dt>Block rate</dt><dd>Share of look-ups we refused. 10–40% is normal; 0% means devices aren't using the Pi yet.</dd>
+    </dl>
+
+    <h3>Still stuck</h3>
+    <p>Re-run the setup walkthrough from <b>Settings → Run setup again</b>, or follow the
+    full illustrated guide on the website.</p>
+  </div>
+</aside>
+
+<main>
+  <!-- OVERVIEW -->
+  <section class="panel active" id="tab-overview">
+    <p class="explain"><b>What you're looking at.</b> Everything your network asked for in the last 24 hours. <b>Queries</b> are address look-ups; <b>blocked</b> are the ones that were ads or trackers. A block rate between 10% and 40% is completely normal.</p>
+    <div class="cards">
+      <div class="card">
+        <span class="label">Queries</span>
+        <span class="value" id="stat-total">–</span>
+        <span class="hint" id="stat-clients">–</span>
+      </div>
+      <div class="card accent">
+        <span class="label">Blocked</span>
+        <span class="value" id="stat-blocked">–</span>
+        <span class="hint" id="stat-blocked-pct">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Domains on lists</span>
+        <span class="value" id="stat-domains">–</span>
+        <span class="hint" id="stat-lists">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Cache hit rate</span>
+        <span class="value" id="stat-cache">–</span>
+        <span class="hint" id="stat-cache-entries">–</span>
+      </div>
+      <div class="card">
+        <span class="label">DNSSEC validated</span>
+        <span class="value" id="stat-dnssec">–</span>
+        <span class="hint" id="stat-history">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Avg response</span>
+        <span class="value" id="stat-latency">–</span>
+        <span class="hint" id="stat-uptime">–</span>
+      </div>
+    </div>
+
+    <div id="schedule-banner" class="banner hidden"></div>
+
+    <div class="grid-2">
+      <div class="box">
+        <div class="box-head">
+          <h2>Activity (last 24h)</h2>
+          <span class="legend"><i class="dot ok"></i>allowed <i class="dot bad"></i>blocked</span>
+        </div>
+        <div id="chart" class="chart"></div>
+      </div>
+      <div class="box">
+        <div class="box-head"><h2>Is a domain blocked?</h2></div>
+        <form id="check-form" class="inline-form">
+          <input id="check-domain" placeholder="e.g. ads.tiktok.com" />
+          <button class="btn" type="submit">Check</button>
+        </form>
+        <div id="check-result" class="check-result"></div>
+        <div class="box-head"><h2>Upstream resolvers</h2></div>
+        <table class="mini" id="upstreams"></table>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="box">
+        <div class="box-head"><h2>Top blocked</h2></div>
+        <table class="mini" id="top-blocked"></table>
+      </div>
+      <div class="box">
+        <div class="box-head"><h2>Busiest devices</h2></div>
+        <table class="mini" id="top-clients"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUERY LOG -->
+  <section class="panel" id="tab-queries">
+    <p class="explain"><b>Live list of every look-up.</b> Useful when something stops working: find the device, look for a red <b>blocked</b> row that mentions the app, and press <b>allow</b>. The change is instant — no restart.</p>
+    <div class="box">
+      <div class="box-head">
+        <h2>Live query log</h2>
+        <div class="filters">
+          <input id="q-search" placeholder="filter by domain or device" />
+          <select id="q-status">
+            <option value="">all</option>
+            <option value="blocked">blocked</option>
+            <option value="allowed">allowed</option>
+            <option value="cached">cached</option>
+            <option value="error">errors</option>
+          </select>
+          <label class="toggle"><input type="checkbox" id="q-live" checked /> live</label>
+        </div>
+      </div>
+      <table class="log">
+        <thead>
+          <tr><th>Time</th><th>Device</th><th>Domain</th><th>Type</th><th>Status</th><th>Reason</th><th>ms</th><th></th></tr>
+        </thead>
+        <tbody id="query-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LISTS -->
+  <section class="panel" id="tab-lists">
+    <p class="explain"><b>Where the block rules come from.</b> Each list is a public file of known ad and tracker addresses, refreshed daily. More lists means more blocking and slightly more chance a site misbehaves. Turn one off if it causes trouble.</p>
+    <div class="box">
+      <div class="box-head"><h2>Blocklist sources</h2><span class="hint" id="lists-total"></span></div>
+      <form id="list-form" class="inline-form">
+        <input id="list-title" placeholder="name (optional)" />
+        <input id="list-url" placeholder="https://… hosts or domain list URL" />
+        <button class="btn" type="submit">Add list</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Name</th><th>Domains</th><th>Updated</th><th>Status</th><th>On</th><th></th></tr></thead>
+        <tbody id="list-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RULES -->
+  <section class="panel" id="tab-rules">
+    <p class="explain"><b>Your own exceptions.</b> Rules you write always beat the lists. Use <b>allow</b> to rescue something a list broke, <b>block</b> to kill something the lists missed. <code>*.example.com</code> covers every sub-address.</p>
+    <div class="box">
+      <div class="box-head"><h2>Your rules</h2><span class="hint">exact host, *.wildcard or /regex/ — allow always wins</span></div>
+      <form id="rule-form" class="inline-form">
+        <input id="rule-pattern" placeholder="e.g. *.doubleclick.net" />
+        <select id="rule-action">
+          <option value="block">block</option>
+          <option value="allow">allow</option>
+        </select>
+        <input id="rule-group" placeholder="group (optional)" class="narrow" />
+        <input id="rule-comment" placeholder="note (optional)" />
+        <button class="btn" type="submit">Add rule</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Pattern</th><th>Action</th><th>Group</th><th>Note</th><th></th></tr></thead>
+        <tbody id="rule-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DEVICES -->
+  <section class="panel" id="tab-devices">
+    <p class="explain"><b>Who is on your network.</b> Give the gadgets friendly names so the logs read “Living room TV” instead of a number. You can also pause filtering for one device, or open a report of what it has been asking for.</p>
+    <div class="box">
+      <div class="box-head"><h2>Known devices</h2><span class="hint">give a device a name, a rule group, or switch filtering off for it</span></div>
+      <form id="device-form" class="inline-form">
+        <input id="device-match" placeholder="192.168.1.42 or 192.168.5.0/24" />
+        <input id="device-name" placeholder="Living room TV" />
+        <input id="device-group" placeholder="group (optional)" class="narrow" />
+        <label class="toggle"><input type="checkbox" id="device-paused" /> no filtering</label>
+        <button class="btn" type="submit">Save device</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Match</th><th>Name</th><th>Group</th><th>Filtering</th><th></th></tr></thead>
+        <tbody id="device-rows"></tbody>
+      </table>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Seen on the network</h2><span class="hint">click a row for a drill-down</span></div>
+      <table class="log">
+        <thead><tr><th>IP</th><th>Name</th><th>Queries</th><th>Blocked</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="seen-rows"></tbody>
+      </table>
+    </div>
+    <div class="box" id="device-report-box">
+      <div class="box-head">
+        <h2>Device report</h2>
+        <span class="hint">
+          <select id="report-client"><option value="">pick a device…</option></select>
+          <select id="report-days">
+            <option value="1">last 24 hours</option>
+            <option value="7" selected>last 7 days</option>
+            <option value="30">last 30 days</option>
+          </select>
+        </span>
+      </div>
+      <div id="report-empty" class="hint">Pick a device to see what it has been asking for.</div>
+      <div id="report-body" class="hidden">
+        <div class="cards small">
+          <div class="card"><span class="label">Queries</span><span class="value" id="rep-total">–</span><span class="hint" id="rep-window"></span></div>
+          <div class="card"><span class="label">Blocked</span><span class="value" id="rep-blocked">–</span><span class="hint" id="rep-ratio"></span></div>
+          <div class="card"><span class="label">Cached</span><span class="value" id="rep-cached">–</span><span class="hint" id="rep-latency"></span></div>
+          <div class="card"><span class="label">Policy</span><span class="value" id="rep-policy">–</span><span class="hint" id="rep-seen"></span></div>
+        </div>
+        <div id="rep-chart" class="chart"></div>
+        <div class="split">
+          <div>
+            <h3>Most queried</h3>
+            <table class="mini" id="rep-top"></table>
+          </div>
+          <div>
+            <h3>Most blocked</h3>
+            <table class="mini" id="rep-blocked-table"></table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HISTORY -->
+  <section class="panel" id="tab-history">
+    <p class="explain"><b>The long game.</b> Kept on the Pi for 30 days so you can answer “what has the TV been doing at 3am?”. Nothing is sent anywhere; you can export or delete it at any time.</p>
+    <div class="box">
+      <div class="box-head">
+        <h2>Long-term history</h2>
+        <span class="hint" id="history-meta"></span>
+      </div>
+      <form id="history-form" class="inline-form">
+        <input id="h-search" placeholder="domain, device or rule" />
+        <select id="h-status">
+          <option value="">all</option>
+          <option value="blocked">blocked</option>
+          <option value="allowed">allowed</option>
+          <option value="cached">cached</option>
+          <option value="error">errors</option>
+        </select>
+        <input id="h-from" type="date" />
+        <input id="h-to" type="date" />
+        <button class="btn" type="submit">Search</button>
+        <a class="btn ghost" id="h-export" href="/api/history/export">Export JSONL</a>
+      </form>
+      <div id="history-chart" class="chart"></div>
+      <table class="log">
+        <thead><tr><th>When</th><th>Device</th><th>Domain</th><th>Type</th><th>Status</th><th>Reason</th><th>ms</th></tr></thead>
+        <tbody id="history-rows"></tbody>
+      </table>
+      <div class="pager">
+        <button class="btn tiny" id="h-prev">‹ newer</button>
+        <span class="hint" id="h-page"></span>
+        <button class="btn tiny" id="h-next">older ›</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- SCHEDULES -->
+  <section class="panel" id="tab-schedules">
+    <p class="explain"><b>Rules that watch the clock.</b> Switch off social media during homework, or block everything for the kids' tablets after bedtime. Pick a group of devices, a time window and the days it applies.</p>
+    <div class="box">
+      <div class="box-head">
+        <h2>Time-based rules</h2>
+        <span class="hint">bedtime, homework hours, no socials at dinner — something Pi-hole leaves to cron</span>
+      </div>
+      <form id="schedule-form" class="settings-grid">
+        <label>Name<input id="sc-name" placeholder="Bedtime" /></label>
+        <label>Applies to group<input id="sc-group" placeholder="blank = every device" /></label>
+        <label>Mode
+          <select id="sc-mode">
+            <option value="block-all">block everything</option>
+            <option value="block-list">block only these domains</option>
+            <option value="allow-only">allow only these domains</option>
+          </select>
+        </label>
+        <label>Days<input id="sc-days" placeholder="all, weekdays, weekends or mon,tue…" /></label>
+        <label>From<input id="sc-start" type="time" value="22:00" /></label>
+        <label>Until<input id="sc-end" type="time" value="07:00" /></label>
+        <label class="wide">Domains (one per line; wildcards and /regex/ allowed)<textarea id="sc-patterns" rows="2"></textarea></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save schedule</button>
+          <span class="hint" id="sc-next"></span>
+        </div>
+      </form>
+      <table class="log">
+        <thead><tr><th>Name</th><th>When</th><th>Days</th><th>Group</th><th>Mode</th><th>State</th><th></th></tr></thead>
+        <tbody id="schedule-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DHCP -->
+  <section class="panel" id="tab-dhcp">
+    <p class="explain"><b>Only if your router won't cooperate.</b> Some routers (Xfinity, Sky, many ISP boxes) refuse to let you change DNS. In that case, turn the router's DHCP off and let the Pi hand out addresses instead — then every device gets the filter automatically.</p>
+    <div class="box">
+      <div class="box-head">
+        <h2>DHCP server</h2>
+        <span class="hint">hand out addresses yourself: every device then gets this Pi as its DNS, and you learn its hostname</span>
+      </div>
+      <form id="dhcp-form" class="settings-grid">
+        <label class="row"><input type="checkbox" id="dh-enabled" /> Enable the DHCP server (turn your router's off first)</label>
+        <label>This Pi's IP<input id="dh-server" placeholder="192.168.1.2" /></label>
+        <label>Router / gateway<input id="dh-gateway" placeholder="192.168.1.1" /></label>
+        <label>Netmask<input id="dh-netmask" placeholder="255.255.255.0" /></label>
+        <label>Pool start<input id="dh-start" placeholder="192.168.1.100" /></label>
+        <label>Pool end<input id="dh-end" placeholder="192.168.1.200" /></label>
+        <label>Lease hours<input id="dh-lease" type="number" min="1" value="12" /></label>
+        <label>Domain name<input id="dh-domain" placeholder="lan" /></label>
+        <div class="actions"><button class="btn" type="submit">Save DHCP settings</button></div>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Leases</h2><span class="hint" id="dhcp-count"></span></div>
+      <form id="reservation-form" class="inline-form">
+        <input id="res-mac" placeholder="aa:bb:cc:dd:ee:ff" />
+        <input id="res-ip" placeholder="192.168.1.50" />
+        <input id="res-host" placeholder="name (optional)" />
+        <button class="btn" type="submit">Pin address</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>IP</th><th>Hostname</th><th>MAC</th><th>Vendor</th><th>Expires</th><th></th></tr></thead>
+        <tbody id="lease-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" id="tab-settings">
+    <p class="explain"><b>Knobs you rarely need.</b> The defaults are good. The two worth knowing: <b>sinkhole mode</b> decides what a blocked device is told, and <b>upstream resolvers</b> are who the Pi asks about everything that isn't blocked.</p>
+    <div class="box">
+      <div class="box-head"><h2>Resolver settings</h2><span class="hint" id="settings-path"></span></div>
+      <form id="settings-form" class="settings-grid">
+        <label>Sinkhole mode
+          <select id="set-sinkhole">
+            <option value="zero-ip">zero-ip (0.0.0.0)</option>
+            <option value="nxdomain">nxdomain</option>
+            <option value="refused">refused</option>
+            <option value="custom-ip">custom IP</option>
+          </select>
+        </label>
+        <label>Custom IPv4<input id="set-customv4" placeholder="192.168.1.2" /></label>
+        <label>Upstream resolvers (one per line)<textarea id="set-upstreams" rows="3"></textarea></label>
+        <label>DNS-over-HTTPS endpoints (one per line)<textarea id="set-doh" rows="3"></textarea></label>
+        <label class="row"><input type="checkbox" id="set-preferdoh" /> Prefer DoH (hide lookups from the ISP)</label>
+        <label class="row"><input type="checkbox" id="set-subdomains" /> Block subdomains of listed domains</label>
+        <label class="row"><input type="checkbox" id="set-cname" /> Block CNAME-cloaked trackers</label>
+        <label class="row"><input type="checkbox" id="set-https" /> Drop HTTPS/SVCB records</label>
+        <label class="row"><input type="checkbox" id="set-stale" /> Serve stale cache when upstreams fail</label>
+        <label class="row"><input type="checkbox" id="set-dnssec" /> Request DNSSEC (DO bit) and track validated answers</label>
+        <label class="row"><input type="checkbox" id="set-doh-server" /> Serve DNS-over-HTTPS at /dns-query</label>
+        <label>Conditional forwarding (one "domain=resolver" per line)<textarea id="set-forward" rows="2" placeholder="home.arpa=192.168.1.1"></textarea></label>
+        <label>Cache size<input id="set-cachesize" type="number" min="100" /></label>
+        <label>Upstream timeout (ms)<input id="set-timeout" type="number" min="200" /></label>
+        <label>Block TTL (s)<input id="set-blockttl" type="number" min="0" /></label>
+        <label>List refresh (hours)<input id="set-interval" type="number" min="1" /></label>
+        <label>Allowed clients (one IP/CIDR per line, blank = private networks)<textarea id="set-allowed" rows="2"></textarea></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save settings</button>
+          <button class="btn ghost" type="button" id="btn-reset-stats">Reset statistics</button>
+          <button class="btn ghost" type="button" id="btn-rerun-setup">Run setup again</button>
+          <a class="btn ghost" href="/api/backup" download>Download backup</a>
+          <label class="btn ghost" for="restore-file">Restore backup<input type="file" id="restore-file" accept="application/json" hidden /></label>
+        </div>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Security</h2><span class="hint" id="security-state"></span></div>
+      <form id="password-form" class="settings-grid">
+        <label>Current password<input type="password" id="pw-current" autocomplete="current-password" placeholder="leave blank if none is set" /></label>
+        <label>New password<input type="password" id="pw-new" autocomplete="new-password" placeholder="at least 8 characters" /></label>
+        <label>Repeat new password<input type="password" id="pw-repeat" autocomplete="new-password" /></label>
+        <label class="row"><input type="checkbox" id="set-tls" /> Serve the dashboard over HTTPS (self-signed certificate)</label>
+        <label>HTTPS port<input id="set-tls-port" type="number" min="1" max="65535" /></label>
+        <label class="row"><input type="checkbox" id="set-tls-redirect" /> Redirect plain HTTP to HTTPS</label>
+        <label class="row"><input type="checkbox" id="set-prefetch" /> Prefetch popular names before their TTL expires</label>
+        <div class="actions">
+          <button class="btn" type="submit">Save security settings</button>
+          <button class="btn ghost" type="button" id="btn-logout-all">Sign out everywhere</button>
+          <button class="btn ghost" type="button" id="btn-logout">Sign out</button>
+        </div>
+        <span class="hint" id="password-msg"></span>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Point your network here</h2></div>
+      <ol class="howto">
+        <li>Give the Pi a static IP (or a DHCP reservation) on your router.</li>
+        <li>In the router's DHCP settings, set the <b>DNS server</b> to that IP.</li>
+        <li>Reboot the streaming devices (or wait for their DHCP lease to renew).</li>
+        <li>Block outbound port 53 to everything except the Pi so devices with hard-coded resolvers cannot escape.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

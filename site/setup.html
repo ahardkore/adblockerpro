@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Setup guide — adblockerpro</title>
+<meta name="description" content="Step-by-step: write Raspberry Pi OS to a card, boot the Pi, install adblockerpro with one command, and point your router at it. Written for people who have never used a terminal." />
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+
+<header class="site-head">
+  <div class="wrap">
+    <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
+    <nav class="site-nav">
+      <a href="index.html">Home</a>
+      <a href="hardware.html">What you need</a>
+      <a href="setup.html">Setup guide</a>
+      <a href="faq.html">Help &amp; FAQ</a>
+      <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">The whole thing, step by step</h2>
+    <p class="section-sub">
+      Eight steps. About an hour, most of it waiting for downloads. You will type
+      exactly two commands, both of which you can copy with a button. If you get
+      stuck at any point, the <a href="faq.html">Help page</a> covers every common snag.
+    </p>
+
+    <div class="callout">
+      <b>Before you start:</b> have the Pi, the memory card, the power supply and
+      your router's admin password to hand. If you are missing something, the
+      <a href="hardware.html">shopping list</a> is one page back.
+    </div>
+
+    <div class="steps">
+
+      <div class="step">
+        <h3>Write the operating system to the card <span class="time">15 minutes</span></h3>
+        <p>On your normal computer, download <b>Raspberry Pi Imager</b> from
+          <a href="https://www.raspberrypi.com/software/" target="_blank" rel="noopener">raspberrypi.com/software</a>
+          and install it. Put the memory card in your computer (a card reader if your laptop has no slot), then:</p>
+        <ol>
+          <li>Open Imager and click <b>Choose device</b> → pick your Pi model.</li>
+          <li><b>Choose OS</b> → <i>Raspberry Pi OS (other)</i> → <b>Raspberry Pi OS Lite (64-bit)</b>.
+            “Lite” means no desktop — this box has no screen, and Lite leaves more room for everything else.</li>
+          <li><b>Choose storage</b> → your memory card. Check it twice; the card is erased.</li>
+          <li>Click <b>Next</b>, then <b>Edit settings</b> when it offers. This part matters:</li>
+        </ol>
+        <ul>
+          <li>Set hostname to <code>adblockerpro</code> — that is how you will find it later.</li>
+          <li>Set a username and password. Write them down. Use <code>pi</code> as the username if you want the rest of this guide to match exactly.</li>
+          <li>If the Pi will use Wi-Fi, tick <b>Configure wireless LAN</b> and enter your network name and password, plus your country.</li>
+          <li>On the <b>Services</b> tab, tick <b>Enable SSH</b> → <i>Use password authentication</i>. Without this you cannot talk to the Pi at all.</li>
+        </ul>
+        <p>Save, then <b>Write</b>. Go and make a coffee; it takes a few minutes.</p>
+        <div class="callout warn">If you skip the SSH tick box, you will have to start this step again. It is the single most common mistake.</div>
+      </div>
+
+      <div class="step">
+        <h3>Plug the Pi in <span class="time">3 minutes</span></h3>
+        <ol>
+          <li>Put the memory card in the Pi (contacts facing the board).</li>
+          <li>If you are using a cable, connect the Pi to a spare LAN port on your router.</li>
+          <li>Plug in the power supply. A green light will flicker — that is it thinking.</li>
+          <li>Wait three minutes. The very first boot is slow because it resizes the card.</li>
+        </ol>
+        <p>There is no screen and nothing to click. The Pi is now quietly sitting on your network waiting to be talked to.</p>
+      </div>
+
+      <div class="step">
+        <h3>Connect to it from your computer <span class="time">5 minutes</span></h3>
+        <p>You are going to open a text window that is typing on the Pi instead of on your own machine. It is less dramatic than it sounds.</p>
+        <ul>
+          <li><b>Windows:</b> open the Start menu, type <code>cmd</code>, press Enter.</li>
+          <li><b>Mac:</b> press ⌘ + Space, type <code>terminal</code>, press Enter.</li>
+          <li><b>Linux:</b> you know where your terminal is.</li>
+        </ul>
+        <p>Then paste this (replace <code>pi</code> if you chose a different username) and press Enter:</p>
+        <pre><code>ssh pi@adblockerpro.local</code></pre>
+        <p>It will ask <i>“Are you sure you want to continue connecting?”</i> — type <code>yes</code>.
+          Then it asks for the password you set in Imager. <b>Nothing appears as you type the password.</b>
+          That is normal; type it and press Enter.</p>
+        <div class="callout warn">
+          <b>“Could not resolve hostname”?</b> Some networks don't do <code>.local</code> names.
+          Find the Pi's address in your router's device list (look for “adblockerpro” or “raspberrypi”)
+          and use that instead: <code>ssh pi@192.168.1.123</code>.
+        </div>
+        <p>When you see something like <code>pi@adblockerpro:~ $</code> you are in.</p>
+      </div>
+
+      <div class="step">
+        <h3>Install adblockerpro <span class="time">5 minutes</span></h3>
+        <p>Copy this one line, paste it into that window, press Enter:</p>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh | sudo bash</code></pre>
+        <p>It will ask for your password again (it needs admin rights to take over port 53, the DNS port). Then it:</p>
+        <ul>
+          <li>downloads the right binary for your Pi,</li>
+          <li>creates a locked-down user for it to run as,</li>
+          <li>steps around the system's own DNS service, which normally occupies that port,</li>
+          <li>installs it as a service so it starts automatically after a power cut,</li>
+          <li>downloads the blocklists and starts filtering.</li>
+        </ul>
+        <p>When it finishes it prints the address of your dashboard. It will look like
+          <code>http://192.168.1.123:8080</code>.</p>
+        <div class="callout good">
+          Nothing has changed on your network yet. The Pi is filtering, but nothing is asking it to.
+          That is the next step — and it is the one that matters.
+        </div>
+      </div>
+
+      <div class="step">
+        <h3>Open the dashboard and run the wizard <span class="time">5 minutes</span></h3>
+        <p>On any device in the house, open a browser and go to the address the installer printed
+          (or <code>http://adblockerpro.local:8080</code>).</p>
+        <p>A welcome wizard appears. It asks you three things:</p>
+        <ul>
+          <li><b>How strict?</b> Choose <i>Balanced</i> unless you have a reason not to. You can change it later in one click.</li>
+          <li><b>Your router.</b> It shows you the exact address to type into the router — the next step of this guide.</li>
+          <li><b>A password</b> for the dashboard, so a guest on your Wi-Fi can't switch the filter off.</li>
+        </ul>
+        <p>Leave the browser tab open. You will come back to it to press <b>Run the test</b>.</p>
+      </div>
+
+      <div class="step">
+        <h3>Give the Pi a permanent address <span class="time">5 minutes</span></h3>
+        <p>Your router hands out addresses that can change. If the Pi's address changes after
+          the next power cut, your whole network loses DNS — so pin it down first.</p>
+        <p>In your router's admin pages, look for <b>DHCP reservation</b>, <b>Static lease</b>,
+          <b>Address reservation</b> or <b>Fixed IP</b>, find the device called <code>adblockerpro</code>,
+          and reserve its current address.</p>
+        <div class="callout">Every router words this differently, but it is always within two clicks of the list of connected devices.</div>
+      </div>
+
+      <div class="step">
+        <h3>Point your router at the Pi <span class="time">10 minutes — the important one</span></h3>
+        <p>This is the step that switches the whole house over. In your router's admin pages,
+          find the <b>DNS server</b> setting — it lives under DHCP or LAN settings, not the internet/WAN
+          settings — and set the primary DNS to the Pi's address. Save, and reboot the router if it offers.</p>
+        <table class="compare">
+          <tr><th>Router</th><th>Where the setting hides</th></tr>
+          <tr><td>BT Smart Hub / EE</td><td>Advanced settings → Home network → LAN IP → Primary DNS</td></tr>
+          <tr><td>Virgin Media Hub</td><td>Advanced settings → DHCP → Primary DNS server</td></tr>
+          <tr><td>Sky</td><td>Usually locked. Use the Pi's own DHCP server instead (see below).</td></tr>
+          <tr><td>Netgear / Nighthawk</td><td>Internet → “Use these DNS servers” → Primary DNS</td></tr>
+          <tr><td>TP-Link</td><td>Network → DHCP Server → Primary DNS</td></tr>
+          <tr><td>ASUS</td><td>LAN → DHCP Server → DNS Server 1, and set “Advertise router's IP…” to <b>No</b></td></tr>
+          <tr><td>Linksys</td><td>Connectivity → Local Network → DHCP Server → Static DNS 1</td></tr>
+          <tr><td>Google Nest Wifi</td><td>Google Home app → Wi-Fi → Settings → Advanced networking → DNS → Custom</td></tr>
+          <tr><td>Eero</td><td>Settings → Network settings → DNS → Custom (needs Eero Plus)</td></tr>
+          <tr><td>Xfinity / most ISP boxes</td><td>Often locked. Use the Pi's own DHCP server instead.</td></tr>
+        </table>
+        <div class="callout warn">
+          <b>Only list the Pi.</b> If you leave a second DNS server (like 8.8.8.8) in the other box,
+          devices will silently use it half the time and you will see ads and think the project failed.
+        </div>
+        <div class="callout">
+          <b>Router won't let you change DNS?</b> Turn <i>off</i> your router's DHCP server, then open the
+          <b>DHCP</b> tab in the dashboard and turn the Pi's own one on. It hands out addresses and
+          points every device at itself. The dashboard explains each box as you fill it in.
+        </div>
+      </div>
+
+      <div class="step">
+        <h3>Test it, then forget about it <span class="time">5 minutes</span></h3>
+        <p>Go back to the dashboard tab and press <b>Run the test</b>. It checks four things and
+          tells you in plain words what to do about anything that fails.</p>
+        <p>Devices only pick up the new setting when their lease renews, so give one device a nudge:
+          turn its Wi-Fi off and on, or reboot it. Then watch the <b>Query log</b> — you should see
+          its look-ups appear within seconds, with some of them red.</p>
+        <p>For a belt-and-braces check from your own computer:</p>
+        <pre><code>nslookup doubleclick.net</code></pre>
+        <p>If it answers <code>0.0.0.0</code>, you are filtered. If it answers a real address,
+          that device is still using the old DNS — reboot it.</p>
+        <div class="callout good">
+          <b>That's it.</b> It updates its blocklists every day, restarts itself after a power cut,
+          and needs nothing from you. Check in when you're curious, or when someone shouts
+          “the internet is broken” — in which case press <b>Pause 5 min</b> at the top of the dashboard
+          and see whether it actually was.
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2 class="section-title">Optional extras, once it's working</h2>
+    <div class="cards">
+      <div class="card"><h3>Bedtime for tablets</h3><p><b>Schedules</b> tab: block everything (or just social media) for a group of devices between set hours.</p></div>
+      <div class="card"><h3>Name your gadgets</h3><p><b>Devices</b> tab: turn “192.168.1.34” into “Fire Stick”, then open its report to see what it has been asking for.</p></div>
+      <div class="card"><h3>Hide look-ups from your ISP</h3><p><b>Settings</b> → tick <i>Prefer DoH</i>. Your provider can no longer see which sites you resolve.</p></div>
+      <div class="card"><h3>Lock the dashboard</h3><p><b>Settings → Security</b>: set a password and turn on HTTPS. Takes ten seconds.</p></div>
+    </div>
+  </div>
+</section>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <span>adblockerpro — free and open source, MIT licensed.</span>
+    <span><a href="faq.html">Something not working? →</a></span>
+    <span><a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">Source on GitHub</a></span>
+  </div>
+</footer>
+
+<script src="site.js"></script>
+</body>
+</html>

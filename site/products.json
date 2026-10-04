@@ -1,0 +1,124 @@
+{
+  "_readme": [
+    "Edit this file to add your Amazon affiliate links — nothing else needs touching.",
+    "Put your Associates tag in affiliate_tag and it is appended to every amazon.* URL",
+    "that does not already carry a tag. Leave a url empty and the card shows a",
+    "'link coming soon' button instead of a dead link.",
+    "Prices are plain text: keep them vague ('about $45') so they do not go stale."
+  ],
+  "affiliate_tag": "",
+  "disclosure": "As an Amazon Associate this site earns from qualifying purchases. It costs you nothing extra and it pays for the time that goes into this project.",
+  "kits": [
+    {
+      "id": "recommended",
+      "title": "The recommended kit",
+      "blurb": "What most people should buy. A Pi 4 with 2 GB is overkill for DNS, which is exactly why it will still be fine in five years.",
+      "items": ["pi4", "sdcard", "psu-usbc", "case4", "ethernet"],
+      "total": "about $90–110 all in"
+    },
+    {
+      "id": "cheap",
+      "title": "The cheap kit",
+      "blurb": "A Pi Zero 2 W handles a busy family home without breaking a sweat. Slower blocklist updates, same blocking.",
+      "items": ["pizero2", "sdcard", "psu-micro", "casezero", "usb-ethernet"],
+      "total": "about $45–60 all in"
+    },
+    {
+      "id": "allinone",
+      "title": "The no-thinking kit",
+      "blurb": "One box with everything in it. Costs a little more than buying the parts separately; saves you three deliveries.",
+      "items": ["starterkit"],
+      "total": "about $120"
+    }
+  ],
+  "products": [
+    {
+      "id": "pi4",
+      "name": "Raspberry Pi 4 Model B (2 GB)",
+      "why": "The brain. 2 GB is plenty — this software uses well under 100 MB. Any Pi 3, 4 or 5 works too.",
+      "watch": "Buy the board on its own only if you already have a USB-C supply and a card.",
+      "price": "about $45",
+      "url": ""
+    },
+    {
+      "id": "pizero2",
+      "name": "Raspberry Pi Zero 2 W",
+      "why": "Cheapest board that is comfortably fast enough. Wi-Fi built in; add the USB adapter below if you want wired.",
+      "watch": "Needs a micro-USB power supply and a mini-HDMI cable if you ever want a screen.",
+      "price": "about $15–20",
+      "url": ""
+    },
+    {
+      "id": "sdcard",
+      "name": "32 GB A2 microSD card (SanDisk / Samsung)",
+      "why": "Where the operating system lives. A2-rated cards survive years of small writes; bargain-bin cards do not.",
+      "watch": "Bigger is not better here. 32 GB is the sweet spot.",
+      "price": "about $10",
+      "url": ""
+    },
+    {
+      "id": "psu-usbc",
+      "name": "Official Raspberry Pi USB-C power supply (5 V 3 A)",
+      "why": "The single most common cause of a Pi 'randomly' misbehaving is a phone charger that cannot hold 5 V.",
+      "watch": "Must be 3 A. A 2.4 A charger will brown-out under load.",
+      "price": "about $10",
+      "url": ""
+    },
+    {
+      "id": "psu-micro",
+      "name": "Micro-USB power supply (5 V 2.5 A)",
+      "why": "For the Pi Zero 2 W. Same rule: a real supply, not a spare phone charger.",
+      "watch": "Micro-USB, not USB-C — the Zero uses the older plug.",
+      "price": "about $8",
+      "url": ""
+    },
+    {
+      "id": "case4",
+      "name": "Aluminium passive-cooling case for Pi 4",
+      "why": "It runs 24/7 in a cupboard. A metal case keeps it cool with no fan noise.",
+      "watch": "Make sure the case matches your exact board model.",
+      "price": "about $12",
+      "url": ""
+    },
+    {
+      "id": "casezero",
+      "name": "Official Raspberry Pi Zero case",
+      "why": "Keeps dust and curious fingers off the board.",
+      "watch": "",
+      "price": "about $6",
+      "url": ""
+    },
+    {
+      "id": "ethernet",
+      "name": "Cat-6 ethernet cable (3 ft / 1 m)",
+      "why": "Plug the Pi into the router. Wired means the filter never drops out when the Wi-Fi hiccups.",
+      "watch": "Short is fine — it is sitting next to the router.",
+      "price": "about $6",
+      "url": ""
+    },
+    {
+      "id": "usb-ethernet",
+      "name": "USB-OTG to ethernet adapter",
+      "why": "Optional for the Pi Zero 2 W if you would rather not rely on Wi-Fi.",
+      "watch": "Needs a micro-USB OTG plug, not the normal USB-A kind.",
+      "price": "about $12",
+      "url": ""
+    },
+    {
+      "id": "starterkit",
+      "name": "Raspberry Pi 4 starter kit (board, case, PSU, card)",
+      "why": "Everything in one box, usually with the card already flashed with Raspberry Pi OS.",
+      "watch": "Check it includes a 5 V 3 A supply and at least a 32 GB card.",
+      "price": "about $120",
+      "url": ""
+    },
+    {
+      "id": "cardreader",
+      "name": "USB microSD card reader",
+      "why": "Only if your laptop has no card slot — you need one to write the operating system.",
+      "watch": "",
+      "price": "about $8",
+      "url": ""
+    }
+  ]
+}
