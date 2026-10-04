@@ -7,19 +7,44 @@
 <meta name="description" content="Build a small box that blocks ads and trackers for every device on your home network — smart TVs, phones, consoles, streaming sticks. No subscription, no apps to install, about an hour of your time." />
 <link rel="stylesheet" href="styles.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<meta name="theme-color" content="#090d19" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)" />
+<meta name="color-scheme" content="dark light" />
+<script>
+  // Set the theme before first paint so the page never flashes the wrong one.
+  (function () {
+    try {
+      var saved = localStorage.getItem("abp-theme");
+      var t = saved || (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+      document.documentElement.setAttribute("data-theme", t);
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    }
+  })();
+</script>
 </head>
 <body>
 
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
-    <nav class="site-nav">
+    <nav class="site-nav" id="site-nav">
       <a href="index.html">Home</a>
       <a href="hardware.html">What you need</a>
       <a href="setup.html">Setup guide</a>
       <a href="faq.html">Help &amp; FAQ</a>
       <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
     </nav>
+    <div class="head-tools">
+      <button class="icon-btn theme-toggle" id="theme-toggle" type="button"
+              aria-label="Switch between light and dark theme" title="Switch theme">
+        <span aria-hidden="true" class="theme-ico">🌙</span>
+      </button>
+      <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
+              aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+        <span class="bars" aria-hidden="true"></span>
+      </button>
+    </div>
   </div>
 </header>
 
