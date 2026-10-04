@@ -183,7 +183,7 @@ type summary struct {
 	} `json:"summary"`
 	Cache struct {
 		Entries  int     `json:"entries"`
-		HitRatio float64 `json:"hit_ratio"`
+		HitRate  float64 `json:"hit_rate"`
 	} `json:"cache"`
 	Upstreams []struct {
 		Name    string `json:"name"`
@@ -226,7 +226,7 @@ func (c *client) status() error {
 	fmt.Printf("  clients   %d\n", s.Summary.Clients)
 	fmt.Printf("  latency   %.1f ms average\n", s.Summary.AvgMS)
 	fmt.Printf("\nBlocklist  %d domains from %d sources\n", s.Lists.Domains, s.Lists.Sources)
-	fmt.Printf("Cache      %d entries, %.1f%% hit rate\n", s.Cache.Entries, s.Cache.HitRatio)
+	fmt.Printf("Cache      %d entries, %.1f%% hit rate\n", s.Cache.Entries, s.Cache.HitRate)
 	fmt.Printf("Upstreams\n")
 	for _, u := range s.Upstreams {
 		state := "up"
