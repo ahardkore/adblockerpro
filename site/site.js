@@ -7,6 +7,18 @@
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
+  /* ---------- basic accessibility ---------- */
+
+  const firstSection = $("body > section");
+  if (firstSection) {
+    firstSection.id = firstSection.id || "main-content";
+    const skip = document.createElement("a");
+    skip.className = "skip-link";
+    skip.href = `#${firstSection.id}`;
+    skip.textContent = "Skip to content";
+    document.body.prepend(skip);
+  }
+
   /* ---------- copy buttons on every code block ---------- */
 
   $$("pre").forEach((pre) => {
