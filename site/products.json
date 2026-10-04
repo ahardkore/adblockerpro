@@ -13,21 +13,47 @@
       "id": "recommended",
       "title": "The recommended kit",
       "blurb": "What most people should buy. A Pi 4 with 2 GB is overkill for DNS, which is exactly why it will still be fine in five years.",
-      "items": ["pi4", "sdcard", "psu-usbc", "case4", "ethernet"],
+      "items": [
+        "pi4",
+        "sdcard",
+        "psu-usbc",
+        "case4",
+        "ethernet"
+      ],
       "total": "about $90–110 all in"
     },
     {
       "id": "cheap",
       "title": "The cheap kit",
       "blurb": "A Pi Zero 2 W handles a busy family home without breaking a sweat. Slower blocklist updates, same blocking.",
-      "items": ["pizero2", "sdcard", "psu-micro", "casezero", "usb-ethernet"],
+      "items": [
+        "pizero2",
+        "sdcard",
+        "psu-micro",
+        "casezero",
+        "usb-ethernet"
+      ],
       "total": "about $45–60 all in"
+    },
+    {
+      "id": "alternate",
+      "title": "Other Pi boards",
+      "blurb": "Pi 3 and Pi 5 boards both work too. Use this tab if you already know which board you want, then add the same card and cable basics plus a matching power supply.",
+      "items": [
+        "pi3",
+        "pi5",
+        "sdcard",
+        "ethernet"
+      ],
+      "total": "varies by board"
     },
     {
       "id": "allinone",
       "title": "The no-thinking kit",
       "blurb": "One box with everything in it. Costs a little more than buying the parts separately; saves you three deliveries.",
-      "items": ["starterkit"],
+      "items": [
+        "starterkit"
+      ],
       "total": "about $120"
     }
   ],
@@ -38,7 +64,7 @@
       "why": "The brain. 2 GB is plenty — this software uses well under 100 MB. Any Pi 3, 4 or 5 works too.",
       "watch": "Buy the board on its own only if you already have a USB-C supply and a card.",
       "price": "about $45",
-      "url": ""
+      "url": "https://link.amazon/B0cqz7OZP"
     },
     {
       "id": "pizero2",
@@ -46,7 +72,23 @@
       "why": "Cheapest board that is comfortably fast enough. Wi-Fi built in; add the USB adapter below if you want wired.",
       "watch": "Needs a micro-USB power supply and a mini-HDMI cable if you ever want a screen.",
       "price": "about $15–20",
-      "url": ""
+      "url": "https://link.amazon/B03kj6WQ5"
+    },
+    {
+      "id": "pi3",
+      "name": "Raspberry Pi 3 Model B / 3B+",
+      "why": "Still fast enough for adblockerpro and a good choice if you find one cheaply or already have one.",
+      "watch": "Uses micro-USB power, not USB-C. Make sure the supply can deliver a steady 5 V at 2.5 A.",
+      "price": "varies",
+      "url": "https://link.amazon/B078YjX0E"
+    },
+    {
+      "id": "pi5",
+      "name": "Raspberry Pi 5",
+      "why": "Works perfectly and has far more performance than DNS filtering needs. Buy it if you want the newest board or will reuse it later.",
+      "watch": "Needs a Pi 5-compatible case and a strong USB-C power supply. Extra RAM does not help adblockerpro.",
+      "price": "about $60–80",
+      "url": "https://link.amazon/B00k3tbcD"
     },
     {
       "id": "sdcard",
@@ -54,7 +96,7 @@
       "why": "Where the operating system lives. A2-rated cards survive years of small writes; bargain-bin cards do not.",
       "watch": "Bigger is not better here. 32 GB is the sweet spot.",
       "price": "about $10",
-      "url": ""
+      "url": "https://link.amazon/B0fy1vW80"
     },
     {
       "id": "psu-usbc",
@@ -90,11 +132,11 @@
     },
     {
       "id": "ethernet",
-      "name": "Cat-6 ethernet cable (3 ft / 1 m)",
+      "name": "Cat-8 ethernet patch cable (short)",
       "why": "Plug the Pi into the router. Wired means the filter never drops out when the Wi-Fi hiccups.",
-      "watch": "Short is fine — it is sitting next to the router.",
-      "price": "about $6",
-      "url": ""
+      "watch": "Short is fine — it is sitting next to the router. Cat-6 or better is plenty; Cat-8 is fine too.",
+      "price": "about $6–10",
+      "url": "https://link.amazon/B0c7oyzC9"
     },
     {
       "id": "usb-ethernet",
