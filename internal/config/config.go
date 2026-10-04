@@ -131,6 +131,12 @@ type Config struct {
 	Rules   []blocklist.Rule `json:"rules"`
 	Devices []Device         `json:"devices"`
 	Log     LogConfig        `json:"log"`
+	// History is the long-term query store.
+	History HistoryConfig `json:"history"`
+	// DHCP is the optional DHCPv4 server.
+	DHCP dhcp.Config `json:"dhcp"`
+	// Schedules are the time-based filtering windows.
+	Schedules []schedule.Schedule `json:"schedules"`
 
 	path string
 	mu   sync.Mutex
