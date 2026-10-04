@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>adblockerpro</title>
+<link rel="stylesheet" href="styles.css" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form class="login-card" id="login-form">
+    <h1>🛡️ adblockerpro</h1>
+    <p>This dashboard is protected. Enter the admin token.</p>
+    <input type="password" id="login-token" placeholder="admin token" autocomplete="current-password" />
+    <button type="submit">Unlock</button>
+    <span class="error" id="login-error"></span>
+  </form>
+</div>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">🛡️</span>
+    <div>
+      <h1>adblockerpro</h1>
+      <span class="sub" id="dns-addr">network-wide ad blocking</span>
+    </div>
+  </div>
+  <div class="top-actions">
+    <span class="pill" id="status-pill">connecting…</span>
+    <button class="btn" id="btn-pause">Pause 5 min</button>
+    <button class="btn" id="btn-update">Update lists</button>
+    <button class="btn ghost" id="btn-flush">Flush cache</button>
+  </div>
+</header>
+
+<nav class="tabs">
+  <button class="tab active" data-tab="overview">Overview</button>
+  <button class="tab" data-tab="queries">Query log</button>
+  <button class="tab" data-tab="lists">Blocklists</button>
+  <button class="tab" data-tab="rules">Rules</button>
+  <button class="tab" data-tab="devices">Devices</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
+<main>
+  <!-- OVERVIEW -->
+  <section class="panel active" id="tab-overview">
+    <div class="cards">
+      <div class="card">
+        <span class="label">Queries</span>
+        <span class="value" id="stat-total">–</span>
+        <span class="hint" id="stat-clients">–</span>
+      </div>
+      <div class="card accent">
+        <span class="label">Blocked</span>
+        <span class="value" id="stat-blocked">–</span>
+        <span class="hint" id="stat-blocked-pct">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Domains on lists</span>
+        <span class="value" id="stat-domains">–</span>
+        <span class="hint" id="stat-lists">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Cache hit rate</span>
+        <span class="value" id="stat-cache">–</span>
+        <span class="hint" id="stat-cache-entries">–</span>
+      </div>
+      <div class="card">
+        <span class="label">Avg response</span>
+        <span class="value" id="stat-latency">–</span>
+        <span class="hint" id="stat-uptime">–</span>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="box">
+        <div class="box-head">
+          <h2>Activity (last 24h)</h2>
+          <span class="legend"><i class="dot ok"></i>allowed <i class="dot bad"></i>blocked</span>
+        </div>
+        <div id="chart" class="chart"></div>
+      </div>
+      <div class="box">
+        <div class="box-head"><h2>Is a domain blocked?</h2></div>
+        <form id="check-form" class="inline-form">
+          <input id="check-domain" placeholder="e.g. ads.tiktok.com" />
+          <button class="btn" type="submit">Check</button>
+        </form>
+        <div id="check-result" class="check-result"></div>
+        <div class="box-head"><h2>Upstream resolvers</h2></div>
+        <table class="mini" id="upstreams"></table>
+      </div>
+    </div>
+
+    <div class="grid-2">
+      <div class="box">
+        <div class="box-head"><h2>Top blocked</h2></div>
+        <table class="mini" id="top-blocked"></table>
+      </div>
+      <div class="box">
+        <div class="box-head"><h2>Busiest devices</h2></div>
+        <table class="mini" id="top-clients"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- QUERY LOG -->
+  <section class="panel" id="tab-queries">
+    <div class="box">
+      <div class="box-head">
+        <h2>Live query log</h2>
+        <div class="filters">
+          <input id="q-search" placeholder="filter by domain or device" />
+          <select id="q-status">
+            <option value="">all</option>
+            <option value="blocked">blocked</option>
+            <option value="allowed">allowed</option>
+            <option value="cached">cached</option>
+            <option value="error">errors</option>
+          </select>
+          <label class="toggle"><input type="checkbox" id="q-live" checked /> live</label>
+        </div>
+      </div>
+      <table class="log">
+        <thead>
+          <tr><th>Time</th><th>Device</th><th>Domain</th><th>Type</th><th>Status</th><th>Reason</th><th>ms</th><th></th></tr>
+        </thead>
+        <tbody id="query-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LISTS -->
+  <section class="panel" id="tab-lists">
+    <div class="box">
+      <div class="box-head"><h2>Blocklist sources</h2><span class="hint" id="lists-total"></span></div>
+      <form id="list-form" class="inline-form">
+        <input id="list-title" placeholder="name (optional)" />
+        <input id="list-url" placeholder="https://… hosts or domain list URL" />
+        <button class="btn" type="submit">Add list</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Name</th><th>Domains</th><th>Updated</th><th>Status</th><th>On</th><th></th></tr></thead>
+        <tbody id="list-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- RULES -->
+  <section class="panel" id="tab-rules">
+    <div class="box">
+      <div class="box-head"><h2>Your rules</h2><span class="hint">exact host, *.wildcard or /regex/ — allow always wins</span></div>
+      <form id="rule-form" class="inline-form">
+        <input id="rule-pattern" placeholder="e.g. *.doubleclick.net" />
+        <select id="rule-action">
+          <option value="block">block</option>
+          <option value="allow">allow</option>
+        </select>
+        <input id="rule-group" placeholder="group (optional)" class="narrow" />
+        <input id="rule-comment" placeholder="note (optional)" />
+        <button class="btn" type="submit">Add rule</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Pattern</th><th>Action</th><th>Group</th><th>Note</th><th></th></tr></thead>
+        <tbody id="rule-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- DEVICES -->
+  <section class="panel" id="tab-devices">
+    <div class="box">
+      <div class="box-head"><h2>Known devices</h2><span class="hint">give a device a name, a rule group, or switch filtering off for it</span></div>
+      <form id="device-form" class="inline-form">
+        <input id="device-match" placeholder="192.168.1.42 or 192.168.5.0/24" />
+        <input id="device-name" placeholder="Living room TV" />
+        <input id="device-group" placeholder="group (optional)" class="narrow" />
+        <label class="toggle"><input type="checkbox" id="device-paused" /> no filtering</label>
+        <button class="btn" type="submit">Save device</button>
+      </form>
+      <table class="log">
+        <thead><tr><th>Match</th><th>Name</th><th>Group</th><th>Filtering</th><th></th></tr></thead>
+        <tbody id="device-rows"></tbody>
+      </table>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Seen on the network</h2></div>
+      <table class="log">
+        <thead><tr><th>IP</th><th>Name</th><th>Queries</th><th>Blocked</th><th>Last seen</th><th></th></tr></thead>
+        <tbody id="seen-rows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" id="tab-settings">
+    <div class="box">
+      <div class="box-head"><h2>Resolver settings</h2><span class="hint" id="settings-path"></span></div>
+      <form id="settings-form" class="settings-grid">
+        <label>Sinkhole mode
+          <select id="set-sinkhole">
+            <option value="zero-ip">zero-ip (0.0.0.0)</option>
+            <option value="nxdomain">nxdomain</option>
+            <option value="refused">refused</option>
+            <option value="custom-ip">custom IP</option>
+          </select>
+        </label>
+        <label>Custom IPv4<input id="set-customv4" placeholder="192.168.1.2" /></label>
+        <label>Upstream resolvers (one per line)<textarea id="set-upstreams" rows="3"></textarea></label>
+        <label>DNS-over-HTTPS endpoints (one per line)<textarea id="set-doh" rows="3"></textarea></label>
+        <label class="row"><input type="checkbox" id="set-preferdoh" /> Prefer DoH (hide lookups from the ISP)</label>
+        <label class="row"><input type="checkbox" id="set-subdomains" /> Block subdomains of listed domains</label>
+        <label class="row"><input type="checkbox" id="set-cname" /> Block CNAME-cloaked trackers</label>
+        <label class="row"><input type="checkbox" id="set-https" /> Drop HTTPS/SVCB records</label>
+        <label class="row"><input type="checkbox" id="set-stale" /> Serve stale cache when upstreams fail</label>
+        <label>Cache size<input id="set-cachesize" type="number" min="100" /></label>
+        <label>Upstream timeout (ms)<input id="set-timeout" type="number" min="200" /></label>
+        <label>Block TTL (s)<input id="set-blockttl" type="number" min="0" /></label>
+        <label>List refresh (hours)<input id="set-interval" type="number" min="1" /></label>
+        <label>Allowed clients (one IP/CIDR per line, blank = private networks)<textarea id="set-allowed" rows="2"></textarea></label>
+        <div class="actions">
+          <button class="btn" type="submit">Save settings</button>
+          <button class="btn ghost" type="button" id="btn-reset-stats">Reset statistics</button>
+        </div>
+      </form>
+    </div>
+    <div class="box">
+      <div class="box-head"><h2>Point your network here</h2></div>
+      <ol class="howto">
+        <li>Give the Pi a static IP (or a DHCP reservation) on your router.</li>
+        <li>In the router's DHCP settings, set the <b>DNS server</b> to that IP.</li>
+        <li>Reboot the streaming devices (or wait for their DHCP lease to renew).</li>
+        <li>Block outbound port 53 to everything except the Pi so devices with hard-coded resolvers cannot escape.</li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,446 @@
+/* adblockerpro dashboard — plain ES2017, no build step. */
+(() => {
+  "use strict";
+
+  const $ = (sel) => document.querySelector(sel);
+  const $$ = (sel) => Array.from(document.querySelectorAll(sel));
+  const fmt = new Intl.NumberFormat();
+
+  let timer = null;
+  let activeTab = "overview";
+
+  /* ---------- helpers ---------- */
+
+  async function api(path, opts = {}) {
+    const res = await fetch(path, {
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      ...opts,
+    });
+    if (res.status === 401) {
+      $("#login").classList.remove("hidden");
+      throw new Error("unauthorized");
+    }
+    const text = await res.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { error: text }; }
+    if (!res.ok) throw new Error(data.error || res.statusText);
+    return data;
+  }
+
+  function toast(msg, bad) {
+    const el = $("#toast");
+    el.textContent = msg;
+    el.style.borderColor = bad ? "#5a2a33" : "";
+    el.classList.add("show");
+    setTimeout(() => el.classList.remove("show"), 2600);
+  }
+
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+
+  function compact(n) {
+    n = Number(n || 0);
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+    return fmt.format(n);
+  }
+
+  function duration(sec) {
+    sec = Math.max(0, Math.floor(sec || 0));
+    const d = Math.floor(sec / 86400), h = Math.floor((sec % 86400) / 3600), m = Math.floor((sec % 3600) / 60);
+    if (d) return `${d}d ${h}h`;
+    if (h) return `${h}h ${m}m`;
+    return `${m}m`;
+  }
+
+  function ago(iso) {
+    if (!iso || iso.startsWith("0001")) return "never";
+    const s = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (s < 60) return `${Math.floor(s)}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+    return `${Math.floor(s / 86400)}d ago`;
+  }
+
+  const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour12: false });
+
+  /* ---------- overview ---------- */
+
+  async function loadSummary() {
+    const d = await api("/api/summary?hours=24");
+    const s = d.summary || {};
+
+    $("#stat-total").textContent = compact(s.total);
+    $("#stat-clients").textContent = `${s.clients || 0} device${s.clients === 1 ? "" : "s"} seen`;
+    $("#stat-blocked").textContent = compact(s.blocked);
+    $("#stat-blocked-pct").textContent = `${(s.block_percent || 0).toFixed(1)}% of all queries`;
+    $("#stat-domains").textContent = compact(d.lists.domains);
+    $("#stat-lists").textContent = `${d.lists.sources} lists · updated ${ago(d.lists.last_update)}`;
+    $("#stat-cache").textContent = `${(d.cache.hit_rate || 0).toFixed(0)}%`;
+    $("#stat-cache-entries").textContent = `${compact(d.cache.entries)} / ${compact(d.cache.max)} entries`;
+    $("#stat-latency").textContent = `${(s.avg_ms || 0).toFixed(1)} ms`;
+    $("#stat-uptime").textContent = `up ${duration(d.status.uptime_s)} · v${d.status.version}`;
+    $("#dns-addr").textContent = `DNS on ${d.status.dns_addr} · sinkhole: ${d.status.sinkhole}`;
+
+    const pill = $("#status-pill");
+    if (d.status.paused) {
+      pill.textContent = `paused until ${clock(d.status.paused_until)}`;
+      pill.className = "pill paused";
+      $("#btn-pause").textContent = "Resume";
+    } else {
+      pill.textContent = "filtering";
+      pill.className = "pill";
+      $("#btn-pause").textContent = "Pause 5 min";
+    }
+
+    drawChart(s.timeline || []);
+    fillMini("#top-blocked", s.top_blocked, "nothing blocked yet");
+    fillMini("#top-clients", s.top_clients, "no devices yet");
+
+    const rows = (d.upstreams || []).map((u) => `
+      <tr>
+        <td class="domain">${esc(u.name)}</td>
+        <td><span class="tag ${u.healthy ? "allowed" : "blocked"}">${u.healthy ? "up" : "down"}</span></td>
+        <td>${compact(u.queries)} q</td>
+        <td>${u.avg_ms ? u.avg_ms.toFixed(0) + " ms" : "–"}</td>
+      </tr>`).join("");
+    $("#upstreams").innerHTML = rows || `<tr><td class="muted">no upstreams</td></tr>`;
+  }
+
+  function fillMini(sel, items, empty) {
+    const el = $(sel);
+    if (!items || !items.length) { el.innerHTML = `<tr><td class="muted">${empty}</td></tr>`; return; }
+    el.innerHTML = items.map((i) => `<tr><td class="domain">${esc(i.name)}</td><td>${compact(i.count)}</td></tr>`).join("");
+  }
+
+  function drawChart(points) {
+    const host = $("#chart");
+    const w = Math.max(host.clientWidth, 320), h = 190, pad = 22;
+    if (!points.length) { host.innerHTML = ""; return; }
+    const max = Math.max(1, ...points.map((p) => p.total));
+    const bw = (w - pad * 2) / points.length;
+    let bars = "";
+    points.forEach((p, i) => {
+      const x = pad + i * bw;
+      const th = ((h - pad * 2) * p.total) / max;
+      const bh = ((h - pad * 2) * p.blocked) / max;
+      const wd = Math.max(1, bw - 1.5);
+      bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - th).toFixed(1)}" width="${wd.toFixed(1)}" height="${th.toFixed(1)}" fill="#60a5fa" opacity=".55" rx="1.5"><title>${clock(p.time)} — ${p.total} queries, ${p.blocked} blocked</title></rect>`;
+      if (bh > 0) bars += `<rect x="${x.toFixed(1)}" y="${(h - pad - bh).toFixed(1)}" width="${wd.toFixed(1)}" height="${bh.toFixed(1)}" fill="#f87171" rx="1.5"/>`;
+    });
+    const first = clock(points[0].time), last = clock(points[points.length - 1].time);
+    host.innerHTML = `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
+      <line x1="${pad}" y1="${h - pad}" x2="${w - pad}" y2="${h - pad}" stroke="#243057"/>
+      ${bars}
+      <text x="${pad}" y="${h - 6}" fill="#8d9ac4" font-size="11">${first}</text>
+      <text x="${w - pad}" y="${h - 6}" fill="#8d9ac4" font-size="11" text-anchor="end">${last}</text>
+      <text x="${pad}" y="14" fill="#8d9ac4" font-size="11">peak ${max}/10min</text>
+    </svg>`;
+  }
+
+  /* ---------- query log ---------- */
+
+  async function loadQueries() {
+    const search = encodeURIComponent($("#q-search").value.trim());
+    const status = $("#q-status").value;
+    const d = await api(`/api/queries?limit=250&search=${search}&status=${status}`);
+    const rows = (d.queries || []).map((q) => `
+      <tr>
+        <td class="muted">${clock(q.time)}</td>
+        <td>${esc(q.device || q.client)}</td>
+        <td class="domain">${esc(q.domain)}</td>
+        <td class="muted">${esc(q.type)}</td>
+        <td><span class="tag ${esc(q.status)}">${esc(q.status)}</span></td>
+        <td class="muted">${esc(q.rule || q.source || q.upstream || "")}</td>
+        <td class="muted">${(q.ms || 0).toFixed(1)}</td>
+        <td><button class="btn tiny" data-quick="${q.status === "blocked" ? "allow" : "block"}" data-domain="${esc(q.domain)}">${q.status === "blocked" ? "allow" : "block"}</button></td>
+      </tr>`).join("");
+    $("#query-rows").innerHTML = rows || `<tr><td colspan="8" class="muted">no queries yet — point a device at this resolver</td></tr>`;
+  }
+
+  /* ---------- lists ---------- */
+
+  async function loadLists() {
+    const d = await api("/api/lists");
+    $("#lists-total").textContent = `${compact(d.domains)} domains blocked in total`;
+    $("#list-rows").innerHTML = (d.sources || []).map((s) => `
+      <tr>
+        <td><div>${esc(s.title)}</div><div class="hint domain">${esc(s.url)}</div></td>
+        <td>${compact(s.domains)}</td>
+        <td class="muted">${ago(s.last_updated)}</td>
+        <td>${s.last_error ? `<span class="tag error">${esc(s.last_error)}</span>` : `<span class="tag allowed">ok</span>`}</td>
+        <td><input type="checkbox" data-toggle="${esc(s.id)}" ${s.enabled ? "checked" : ""}></td>
+        <td><button class="btn tiny danger" data-del-list="${esc(s.id)}">remove</button></td>
+      </tr>`).join("") || `<tr><td colspan="6" class="muted">no lists configured</td></tr>`;
+  }
+
+  /* ---------- rules ---------- */
+
+  async function loadRules() {
+    const d = await api("/api/rules");
+    $("#rule-rows").innerHTML = (d.rules || []).map((r) => `
+      <tr>
+        <td class="domain">${esc(r.pattern)}</td>
+        <td><span class="tag ${r.action === "allow" ? "allowed" : "blocked"}">${esc(r.action)}</span></td>
+        <td class="muted">${esc(r.group || "all devices")}</td>
+        <td class="muted">${esc(r.comment || "")}</td>
+        <td><button class="btn tiny danger" data-del-rule="${esc(r.pattern)}" data-action="${esc(r.action)}" data-group="${esc(r.group || "")}">remove</button></td>
+      </tr>`).join("") || `<tr><td colspan="5" class="muted">no custom rules — lists are doing the work</td></tr>`;
+  }
+
+  /* ---------- devices ---------- */
+
+  async function loadDevices() {
+    const d = await api("/api/devices");
+    $("#device-rows").innerHTML = (d.devices || []).map((v) => `
+      <tr>
+        <td class="domain">${esc(v.match)}</td>
+        <td>${esc(v.name || "")}</td>
+        <td class="muted">${esc(v.group || "default")}</td>
+        <td>${v.paused ? `<span class="tag error">off</span>` : `<span class="tag allowed">on</span>`}</td>
+        <td><button class="btn tiny danger" data-del-device="${esc(v.match)}">remove</button></td>
+      </tr>`).join("") || `<tr><td colspan="5" class="muted">no named devices yet</td></tr>`;
+
+    $("#seen-rows").innerHTML = (d.seen || []).map((v) => `
+      <tr>
+        <td class="domain">${esc(v.ip)}</td>
+        <td>${esc(v.name || "")}</td>
+        <td>${compact(v.queries)}</td>
+        <td>${compact(v.blocked)}</td>
+        <td class="muted">${ago(v.last_seen)}</td>
+        <td><button class="btn tiny" data-adopt="${esc(v.ip)}">name it</button></td>
+      </tr>`).join("") || `<tr><td colspan="6" class="muted">nothing has queried this resolver yet</td></tr>`;
+  }
+
+  /* ---------- settings ---------- */
+
+  async function loadSettings() {
+    const d = await api("/api/settings");
+    const dns = d.dns || {};
+    $("#settings-path").textContent = d.path ? `config: ${d.path}` : "";
+    $("#set-sinkhole").value = dns.sinkhole || "zero-ip";
+    $("#set-customv4").value = dns.custom_ipv4 || "";
+    $("#set-upstreams").value = (dns.upstreams || []).join("\n");
+    $("#set-doh").value = (dns.doh_upstreams || []).join("\n");
+    $("#set-preferdoh").checked = !!dns.prefer_doh;
+    $("#set-subdomains").checked = !!dns.block_subdomains;
+    $("#set-cname").checked = !!dns.block_cname_cloaking;
+    $("#set-https").checked = !!dns.block_https_records;
+    $("#set-stale").checked = !!dns.serve_stale;
+    $("#set-cachesize").value = dns.cache_size || 20000;
+    $("#set-timeout").value = dns.upstream_timeout_ms || 3500;
+    $("#set-blockttl").value = dns.block_ttl == null ? 60 : dns.block_ttl;
+    $("#set-allowed").value = (dns.allowed_clients || []).join("\n");
+    $("#set-interval").value = (d.lists && d.lists.update_interval_hours) || 24;
+    window.__dns = dns;
+  }
+
+  const lines = (sel) => $(sel).value.split("\n").map((s) => s.trim()).filter(Boolean);
+
+  /* ---------- tabs & refresh ---------- */
+
+  const loaders = {
+    overview: loadSummary,
+    queries: loadQueries,
+    lists: loadLists,
+    rules: loadRules,
+    devices: loadDevices,
+    settings: loadSettings,
+  };
+
+  async function refresh() {
+    try {
+      await loaders[activeTab]();
+      if (activeTab !== "overview") await loadSummary().catch(() => {});
+    } catch (e) {
+      if (e.message !== "unauthorized") console.error(e);
+    }
+  }
+
+  function schedule() {
+    clearInterval(timer);
+    const live = $("#q-live").checked;
+    const every = activeTab === "queries" ? (live ? 2000 : 0) : 5000;
+    if (every) timer = setInterval(refresh, every);
+  }
+
+  function selectTab(name) {
+    activeTab = name;
+    $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.tab === name));
+    $$(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+    refresh();
+    schedule();
+  }
+
+  /* ---------- events ---------- */
+
+  $$(".tab").forEach((t) => t.addEventListener("click", () => selectTab(t.dataset.tab)));
+  $("#q-live").addEventListener("change", schedule);
+  $("#q-search").addEventListener("input", () => loadQueries().catch(() => {}));
+  $("#q-status").addEventListener("change", () => loadQueries().catch(() => {}));
+  window.addEventListener("resize", () => { if (activeTab === "overview") refresh(); });
+
+  $("#btn-pause").addEventListener("click", async () => {
+    const paused = $("#status-pill").classList.contains("paused");
+    await api("/api/control", { method: "POST", body: JSON.stringify({ action: paused ? "resume" : "pause", minutes: 5 }) });
+    toast(paused ? "Filtering resumed" : "Filtering paused for 5 minutes");
+    refresh();
+  });
+
+  $("#btn-update").addEventListener("click", async (e) => {
+    e.target.disabled = true; e.target.textContent = "Updating…";
+    try {
+      const d = await api("/api/lists/update", { method: "POST" });
+      toast(`Lists updated — ${fmt.format(d.domains)} domains`);
+    } catch (err) { toast("Update failed: " + err.message, true); }
+    e.target.disabled = false; e.target.textContent = "Update lists";
+    refresh();
+  });
+
+  $("#btn-flush").addEventListener("click", async () => {
+    const d = await api("/api/control", { method: "POST", body: JSON.stringify({ action: "flush-cache" }) });
+    toast(`Cache flushed (${d.flushed} entries)`);
+    refresh();
+  });
+
+  $("#check-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const domain = $("#check-domain").value.trim();
+    if (!domain) return;
+    const d = await api(`/api/check?domain=${encodeURIComponent(domain)}`);
+    const dec = d.decision || {};
+    $("#check-result").innerHTML = dec.blocked
+      ? `<span class="verdict blocked">BLOCKED</span> — matched <code>${esc(dec.rule)}</code> from <b>${esc(dec.source)}</b>
+         <button class="btn tiny" data-quick="allow" data-domain="${esc(d.domain)}">allow it</button>`
+      : `<span class="verdict allowed">ALLOWED</span> — no list or rule matches
+         <button class="btn tiny" data-quick="block" data-domain="${esc(d.domain)}">block it</button>`;
+  });
+
+  $("#list-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/lists", { method: "POST", body: JSON.stringify({ title: $("#list-title").value.trim(), url: $("#list-url").value.trim() }) });
+      $("#list-title").value = ""; $("#list-url").value = "";
+      toast("List added — downloading in the background");
+      loadLists();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#rule-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/rules", { method: "POST", body: JSON.stringify({
+        pattern: $("#rule-pattern").value.trim(),
+        action: $("#rule-action").value,
+        group: $("#rule-group").value.trim(),
+        comment: $("#rule-comment").value.trim(),
+      })});
+      $("#rule-pattern").value = ""; $("#rule-comment").value = "";
+      toast("Rule saved");
+      loadRules();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#device-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("/api/devices", { method: "POST", body: JSON.stringify({
+        match: $("#device-match").value.trim(),
+        name: $("#device-name").value.trim(),
+        group: $("#device-group").value.trim(),
+        paused: $("#device-paused").checked,
+      })});
+      $("#device-match").value = ""; $("#device-name").value = "";
+      toast("Device saved");
+      loadDevices();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#settings-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const dns = Object.assign({}, window.__dns || {}, {
+      sinkhole: $("#set-sinkhole").value,
+      custom_ipv4: $("#set-customv4").value.trim(),
+      upstreams: lines("#set-upstreams"),
+      doh_upstreams: lines("#set-doh"),
+      prefer_doh: $("#set-preferdoh").checked,
+      block_subdomains: $("#set-subdomains").checked,
+      block_cname_cloaking: $("#set-cname").checked,
+      block_https_records: $("#set-https").checked,
+      serve_stale: $("#set-stale").checked,
+      cache_size: Number($("#set-cachesize").value),
+      upstream_timeout_ms: Number($("#set-timeout").value),
+      block_ttl: Number($("#set-blockttl").value),
+      allowed_clients: lines("#set-allowed"),
+    });
+    try {
+      await api("/api/settings", { method: "PUT", body: JSON.stringify({ dns, update_interval_hours: Number($("#set-interval").value) }) });
+      toast("Settings saved");
+      loadSettings();
+    } catch (err) { toast(err.message, true); }
+  });
+
+  $("#btn-reset-stats").addEventListener("click", async () => {
+    await api("/api/control", { method: "POST", body: JSON.stringify({ action: "reset-stats" }) });
+    toast("Statistics reset");
+    refresh();
+  });
+
+  // Delegated clicks for table buttons.
+  document.addEventListener("click", async (e) => {
+    const t = e.target;
+    if (!(t instanceof HTMLElement)) return;
+    try {
+      if (t.dataset.quick) {
+        await api("/api/rules", { method: "POST", body: JSON.stringify({
+          pattern: t.dataset.domain, action: t.dataset.quick, comment: "added from dashboard",
+        })});
+        toast(`${t.dataset.domain} will now be ${t.dataset.quick === "allow" ? "allowed" : "blocked"}`);
+        refresh();
+      } else if (t.dataset.delList) {
+        await api(`/api/lists?id=${encodeURIComponent(t.dataset.delList)}`, { method: "DELETE" });
+        toast("List removed"); loadLists();
+      } else if (t.dataset.delRule) {
+        await api(`/api/rules?pattern=${encodeURIComponent(t.dataset.delRule)}&action=${t.dataset.action}&group=${encodeURIComponent(t.dataset.group || "")}`, { method: "DELETE" });
+        toast("Rule removed"); loadRules();
+      } else if (t.dataset.delDevice) {
+        await api(`/api/devices?match=${encodeURIComponent(t.dataset.delDevice)}`, { method: "DELETE" });
+        toast("Device removed"); loadDevices();
+      } else if (t.dataset.adopt) {
+        selectTab("devices");
+        $("#device-match").value = t.dataset.adopt;
+        $("#device-name").focus();
+      }
+    } catch (err) { toast(err.message, true); }
+  });
+
+  document.addEventListener("change", async (e) => {
+    const t = e.target;
+    if (t instanceof HTMLInputElement && t.dataset.toggle) {
+      try {
+        const d = await api("/api/lists/toggle", { method: "POST", body: JSON.stringify({ id: t.dataset.toggle, enabled: t.checked }) });
+        toast(`${fmt.format(d.domains)} domains active`);
+      } catch (err) { toast(err.message, true); }
+    }
+  });
+
+  $("#login-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST", credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: $("#login-token").value }),
+      });
+      if (!res.ok) throw new Error("that token was not accepted");
+      $("#login").classList.add("hidden");
+      $("#login-error").textContent = "";
+      refresh();
+    } catch (err) { $("#login-error").textContent = err.message; }
+  });
+
+  selectTab("overview");
+})();

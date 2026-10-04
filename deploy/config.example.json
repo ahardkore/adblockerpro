@@ -1,0 +1,85 @@
+{
+  "data_dir": "/var/lib/adblockerpro",
+  "dns": {
+    "listen": "0.0.0.0",
+    "port": 53,
+    "upstreams": ["1.1.1.1:53", "9.9.9.9:53", "8.8.8.8:53"],
+    "doh_upstreams": [
+      "https://cloudflare-dns.com/dns-query",
+      "https://dns.quad9.net/dns-query"
+    ],
+    "prefer_doh": true,
+    "sinkhole": "zero-ip",
+    "block_ttl": 60,
+    "block_subdomains": true,
+    "block_cname_cloaking": true,
+    "block_https_records": false,
+    "cache_size": 20000,
+    "cache_min_ttl": 30,
+    "cache_max_ttl": 86400,
+    "serve_stale": true,
+    "upstream_timeout_ms": 3500,
+    "rate_limit_per_client": 0,
+    "allowed_clients": [],
+    "local_records": {}
+  },
+  "web": {
+    "listen": "0.0.0.0",
+    "port": 8080,
+    "admin_token": ""
+  },
+  "lists": {
+    "sources": [
+      {
+        "id": "",
+        "title": "StevenBlack unified hosts",
+        "url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
+        "enabled": true
+      },
+      {
+        "id": "",
+        "title": "AdGuard DNS filter",
+        "url": "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+        "enabled": true
+      },
+      {
+        "id": "",
+        "title": "Peter Lowe's ad servers",
+        "url": "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext",
+        "enabled": true
+      },
+      {
+        "id": "",
+        "title": "OISD small",
+        "url": "https://small.oisd.nl/",
+        "enabled": true
+      },
+      {
+        "id": "",
+        "title": "Smart-TV & CTV trackers",
+        "url": "https://raw.githubusercontent.com/Perflyst/PiHoleBlocklist/master/SmartTV.txt",
+        "enabled": true
+      }
+    ],
+    "update_interval_hours": 24
+  },
+  "rules": [
+    {
+      "pattern": "*.doubleclick.net",
+      "action": "block",
+      "comment": "ad serving across apps and TVs"
+    },
+    {
+      "pattern": "clients4.google.com",
+      "action": "allow",
+      "comment": "Chromecast needs this to finish connecting"
+    }
+  ],
+  "devices": [],
+  "log": {
+    "level": "info",
+    "query_log_size": 20000,
+    "anonymize_clients": false,
+    "persist_stats": true
+  }
+}
