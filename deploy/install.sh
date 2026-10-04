@@ -15,11 +15,13 @@ DATA_DIR="/var/lib/adblockerpro"
 SERVICE="/etc/systemd/system/adblockerpro.service"
 USER_NAME="adblockerpro"
 LOCAL_BUILD=0
+UNINSTALL=0
 WEB_PORT="${WEB_PORT:-8080}"
 
 for arg in "$@"; do
   case "$arg" in
     --local) LOCAL_BUILD=1 ;;
+    --uninstall) UNINSTALL=1 ;;
     --help|-h)
       sed -n '2,12p' "$0"; exit 0 ;;
     *) echo "unknown option: $arg" >&2; exit 1 ;;
@@ -32,6 +34,23 @@ die()  { printf '\033[1;31merror:\033[0m %s\n' "$*" >&2; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "run this with sudo"
 command -v systemctl >/dev/null || die "this installer needs systemd"
+
+uninstall() {
+  log "stopping and removing adblockerpro"
+  systemctl disable --now adblockerpro 2>/dev/null || true
+  rm -f "$SERVICE" "$BIN_DIR/adblockerpro" "$BIN_DIR/abpctl"
+
+  # Undo the systemd-resolved changes made by free_port_53.
+  rm -f /etc/systemd/resolved.conf.d/adblockerpro.conf
+  if [ -e /run/systemd/resolve/stub-resolv.conf ]; then
+    ln -sf /run/systemd/resolve/stub-resolv.conf /etc/resolv.conf
+  fi
+  systemctl daemon-reload
+  systemctl restart systemd-resolved 2>/dev/null || true
+
+  log "program removed; settings and history remain in $CONFIG_DIR and $DATA_DIR"
+  echo "Delete those two directories manually if you do not want to keep them."
+}
 
 # ---------------------------------------------------------------- binary ----
 detect_arch() {
@@ -151,6 +170,10 @@ install_service() {
 }
 
 main() {
+  if [ "$UNINSTALL" -eq 1 ]; then
+    uninstall
+    return
+  fi
   install_binary
   create_user
   free_port_53

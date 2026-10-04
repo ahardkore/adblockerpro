@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Setup guide — adblockerpro</title>
 <meta name="description" content="Step-by-step: write Raspberry Pi OS to a card, boot the Pi, install adblockerpro with one command, and point your router at it. Written for people who have never used a terminal." />
+<link rel="canonical" href="https://ahardkore.github.io/adblockerpro/setup.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="adblockerpro" />
+<meta property="og:title" content="Setup guide — adblockerpro" />
+<meta property="og:description" content="Step-by-step Raspberry Pi setup for adblockerpro, written for people who have never used a terminal." />
+<meta property="og:url" content="https://ahardkore.github.io/adblockerpro/setup.html" />
+<meta property="og:image" content="https://ahardkore.github.io/adblockerpro/img/hero.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="stylesheet" href="styles.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="img/app-icon.png" /><text y='.9em' font-size='90'>🛡️</text></svg>" />
 <meta name="theme-color" content="#090d19" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)" />
 <meta name="color-scheme" content="dark light" />
@@ -22,16 +31,18 @@
     }
   })();
 </script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"HowTo","name":"Set up adblockerpro on a Raspberry Pi","description":"Install a network-wide DNS ad blocker and configure a home router to use it.","totalTime":"PT60M","supply":[{"@type":"HowToSupply","name":"Raspberry Pi, microSD card, power supply and network connection"}],"step":[{"@type":"HowToStep","name":"Write the operating system to the card"},{"@type":"HowToStep","name":"Plug the Pi in"},{"@type":"HowToStep","name":"Connect to it from your computer"},{"@type":"HowToStep","name":"Install adblockerpro"},{"@type":"HowToStep","name":"Open the dashboard and run the wizard"},{"@type":"HowToStep","name":"Give the Pi a permanent address"},{"@type":"HowToStep","name":"Point your router at the Pi"},{"@type":"HowToStep","name":"Test it, then forget about it"}]}</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
-    <nav class="site-nav" id="site-nav">
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
       <a href="index.html">Home</a>
       <a href="hardware.html">What you need</a>
-      <a href="setup.html">Setup guide</a>
+      <a href="setup.html" aria-current="page">Setup guide</a>
       <a href="faq.html">Help &amp; FAQ</a>
       <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
     </nav>
@@ -41,19 +52,19 @@
         <span aria-hidden="true" class="theme-ico">🌙</span>
       </button>
       <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
-              aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+              aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="bars" aria-hidden="true"></span>
       </button>
     </div>
   </div>
 </header>
 
+<main id="main-content">
 <section>
   <div class="wrap">
-    <h2 class="section-title">The whole thing, step by step</h2>
+    <h1 class="section-title">The whole thing, step by step</h1>
     <p class="section-sub">
-      Eight steps. About an hour, most of it waiting for downloads. You will type
-      exactly two commands, both of which you can copy with a button. If you get
+      Eight steps. About an hour, most of it waiting for downloads. You will run only a few commands, all of which you can copy with a button. If you get
       stuck at any point, the <a href="faq.html">Help page</a> covers every common snag.
     </p>
 
@@ -121,8 +132,11 @@
 
       <div class="step">
         <h3>Install adblockerpro <span class="time">5 minutes</span></h3>
-        <p>Copy this one line, paste it into that window, press Enter:</p>
-        <pre><code>curl -fsSL https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh | sudo bash</code></pre>
+<p>Download the installer, optionally <a href="https://github.com/ahardkore/adblockerpro/blob/main/deploy/install.sh" target="_blank" rel="noopener">review its source</a>, then run it:</p>
+<pre><code>curl -fsSLO https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/install.sh
+less install.sh
+sudo bash install.sh</code></pre>
+<p>The first command only downloads the file. <code>less</code> lets you inspect it (press <code>q</code> to leave), and the final command grants the reviewed installer administrator access.</p>
         <p>It will ask for your password again (it needs admin rights to take over port 53, the DNS port). Then it:</p>
         <ul>
           <li>downloads the right binary for your Pi,</li>
@@ -168,7 +182,9 @@
           find the <b>DNS server</b> setting — it lives under DHCP or LAN settings, not the internet/WAN
           settings — and set the primary DNS to the Pi's address. Save, and reboot the router if it offers.</p>
         <table class="compare">
-          <tr><th>Router</th><th>Where the setting hides</th></tr>
+      <caption>Common router DNS settings</caption>
+          <thead><tr><th scope="col">Router</th><th scope="col">Where the setting hides</th></tr></thead>
+      <tbody>
           <tr><td>BT Smart Hub / EE</td><td>Advanced settings → Home network → LAN IP → Primary DNS</td></tr>
           <tr><td>Virgin Media Hub</td><td>Advanced settings → DHCP → Primary DNS server</td></tr>
           <tr><td>Sky</td><td>Usually locked. Use the Pi's own DHCP server instead (see below).</td></tr>
@@ -179,15 +195,17 @@
           <tr><td>Google Nest Wifi</td><td>Google Home app → Wi-Fi → Settings → Advanced networking → DNS → Custom</td></tr>
           <tr><td>Eero</td><td>Settings → Network settings → DNS → Custom (needs Eero Plus)</td></tr>
           <tr><td>Xfinity / most ISP boxes</td><td>Often locked. Use the Pi's own DHCP server instead.</td></tr>
-        </table>
+        </tbody>
+    </table>
         <div class="callout warn">
           <b>Only list the Pi.</b> If you leave a second DNS server (like 8.8.8.8) in the other box,
           devices will silently use it half the time and you will see ads and think the project failed.
         </div>
         <div class="callout">
-          <b>Router won't let you change DNS?</b> Turn <i>off</i> your router's DHCP server, then open the
-          <b>DHCP</b> tab in the dashboard and turn the Pi's own one on. It hands out addresses and
-          points every device at itself. The dashboard explains each box as you fill it in.
+          <b>Router won't let you change DNS?</b> Configure the <b>DHCP</b> tab in the dashboard first. Then turn <i>off</i> your router's DHCP server, enable the Pi's DHCP server, and restart adblockerpro when prompted. Never run both DHCP servers at once: clients may receive conflicting settings. The Pi will then hand out addresses and point every device at itself.
+        </div>
+        <div class="callout warn">
+          <b>Check IPv6 too.</b> Some routers advertise an IPv6 DNS server separately, which can bypass the IPv4 setting above. In the router's IPv6, RA or DHCPv6 settings, advertise the Pi's IPv6 address as DNS, or disable IPv6 DNS advertisements if the router cannot do that. Do not disable IPv6 everywhere merely to hide a configuration problem.
         </div>
       </div>
 
@@ -220,11 +238,13 @@
     <div class="cards">
       <div class="card"><h3>Bedtime for tablets</h3><p><b>Schedules</b> tab: block everything (or just social media) for a group of devices between set hours.</p></div>
       <div class="card"><h3>Name your gadgets</h3><p><b>Devices</b> tab: turn “192.168.1.34” into “Fire Stick”, then open its report to see what it has been asking for.</p></div>
-      <div class="card"><h3>Hide look-ups from your ISP</h3><p><b>Settings</b> → tick <i>Prefer DoH</i>. Your provider can no longer see which sites you resolve.</p></div>
+      <div class="card"><h3>Encrypt upstream look-ups</h3><p><b>Settings</b> → tick <i>Prefer DoH</i>. This hides DNS queries from your provider, although destination IP addresses and other traffic metadata may still reveal which services you use.</p></div>
       <div class="card"><h3>Lock the dashboard</h3><p><b>Settings → Security</b>: set a password and turn on HTTPS. Takes ten seconds.</p></div>
     </div>
   </div>
 </section>
+
+</main>
 
 <footer class="site-foot">
   <div class="wrap">

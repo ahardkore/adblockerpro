@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>What you need — adblockerpro</title>
 <meta name="description" content="The exact shopping list for a network-wide ad blocker: which Raspberry Pi, which memory card, which power supply, and the mistakes that cost people an afternoon." />
+<link rel="canonical" href="https://ahardkore.github.io/adblockerpro/hardware.html" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="adblockerpro" />
+<meta property="og:title" content="What you need — adblockerpro" />
+<meta property="og:description" content="The exact shopping list for a network-wide ad blocker: which Raspberry Pi, memory card and power supply to choose." />
+<meta property="og:url" content="https://ahardkore.github.io/adblockerpro/hardware.html" />
+<meta property="og:image" content="https://ahardkore.github.io/adblockerpro/img/hero.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="stylesheet" href="styles.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="img/app-icon.png" /><text y='.9em' font-size='90'>🛡️</text></svg>" />
 <meta name="theme-color" content="#090d19" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)" />
 <meta name="color-scheme" content="dark light" />
@@ -22,15 +31,17 @@
     }
   })();
 </script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"What you need \u2014 adblockerpro","description":"The exact shopping list for a network-wide ad blocker: which Raspberry Pi, memory card and power supply to choose.","url":"https://ahardkore.github.io/adblockerpro/hardware.html"}</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
-    <nav class="site-nav" id="site-nav">
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
       <a href="index.html">Home</a>
-      <a href="hardware.html">What you need</a>
+      <a href="hardware.html" aria-current="page">What you need</a>
       <a href="setup.html">Setup guide</a>
       <a href="faq.html">Help &amp; FAQ</a>
       <a href="https://github.com/ahardkore/adblockerpro" target="_blank" rel="noopener">GitHub</a>
@@ -41,16 +52,17 @@
         <span aria-hidden="true" class="theme-ico">🌙</span>
       </button>
       <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
-              aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+              aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="bars" aria-hidden="true"></span>
       </button>
     </div>
   </div>
 </header>
 
+<main id="main-content">
 <section>
   <div class="wrap">
-    <h2 class="section-title">What you need</h2>
+    <h1 class="section-title">What you need</h1>
     <p class="section-sub">
       Five small things. Nothing here is specialist — a Raspberry Pi is a $45 computer
       the size of a credit card, sold everywhere. Pick one of the options below;
@@ -58,7 +70,13 @@
     </p>
     <img src="img/kit.jpg" alt="A Raspberry Pi board, microSD card, USB-C power supply, ethernet cable and aluminium case laid out in a row" width="1024" height="440" style="border-radius:16px;border:1px solid var(--line);margin-bottom:28px" />
 
-    <div id="shop"><p class="disclosure">Loading the shopping list…</p></div>
+    <div id="shop" aria-live="polite">
+<p class="disclosure">Loading the interactive shopping list…</p>
+<noscript>
+<div class="callout"><b>Recommended:</b> Raspberry Pi 4 (2 GB), a branded 32 GB A2 microSD card, the official 5 V / 3 A USB-C power supply, a Pi 4 case, and a short Cat-5e or Cat-6 ethernet cable. Expect roughly $90–110 in total. A Pi Zero 2 W or any Pi 3 you already own also works.</div>
+<p class="disclosure">JavaScript is off, so kit comparisons and purchase links are hidden. You can still continue to the <a href="setup.html">setup guide</a>.</p>
+</noscript>
+</div>
   </div>
 </section>
 
@@ -92,12 +110,15 @@
   <div class="wrap">
     <h2 class="section-title">Which Pi should I get?</h2>
     <table class="compare">
-      <tr><th>Board</th><th>Good for</th><th>Notes</th></tr>
+      <caption>Raspberry Pi options</caption>
+      <thead><tr><th scope="col">Board</th><th scope="col">Good for</th><th scope="col">Notes</th></tr></thead>
+      <tbody>
       <tr><td>Pi Zero 2 W</td><td>Any normal home</td><td>Cheapest. Wi-Fi only unless you add a USB adapter. Blocklist updates take a few minutes instead of seconds.</td></tr>
       <tr><td>Pi 4 (2 GB)</td><td>The sweet spot</td><td>Wired ethernet, plenty of headroom, easy to find. Recommended.</td></tr>
       <tr><td>Pi 5</td><td>If you have one already</td><td>Works perfectly, completely unnecessary for this job.</td></tr>
       <tr><td>Pi 3 / 3B+</td><td>Reusing an old one</td><td>Totally fine. Free is the best price.</td></tr>
       <tr><td>Old laptop or mini PC</td><td>Also fine</td><td>Anything that runs Debian or Ubuntu works — the installer handles x86 too.</td></tr>
+    </tbody>
     </table>
     <div class="callout">
       <b>Already own a spare Pi?</b> Then you need nothing at all.
@@ -105,6 +126,8 @@
     </div>
   </div>
 </section>
+
+</main>
 
 <footer class="site-foot">
   <div class="wrap">

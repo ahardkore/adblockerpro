@@ -5,8 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>adblockerpro — block ads on every device in your house</title>
 <meta name="description" content="Build a small box that blocks ads and trackers for every device on your home network — smart TVs, phones, consoles, streaming sticks. No subscription, no apps to install, about an hour of your time." />
+<link rel="canonical" href="https://ahardkore.github.io/adblockerpro/" />
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="adblockerpro" />
+<meta property="og:title" content="adblockerpro — block ads on every device in your house" />
+<meta property="og:description" content="Build a small box that blocks ads and trackers for every device on your home network — smart TVs, phones, consoles, streaming sticks. No subscription, no apps to install, about an hour of your time." />
+<meta property="og:url" content="https://ahardkore.github.io/adblockerpro/" />
+<meta property="og:image" content="https://ahardkore.github.io/adblockerpro/img/hero.jpg" />
+<meta name="twitter:card" content="summary_large_image" />
 <link rel="stylesheet" href="styles.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>" />
+<link rel="icon" href="favicon.svg" type="image/svg+xml" />
+<link rel="apple-touch-icon" href="img/app-icon.png" /><text y='.9em' font-size='90'>🛡️</text></svg>" />
 <meta name="theme-color" content="#090d19" media="(prefers-color-scheme: dark)" />
 <meta name="theme-color" content="#f7f9fc" media="(prefers-color-scheme: light)" />
 <meta name="color-scheme" content="dark light" />
@@ -22,14 +31,16 @@
     }
   })();
 </script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebPage","name":"adblockerpro \u2014 block ads on every device in your house","description":"Build a small box that blocks ads and trackers for every device on your home network \u2014 smart TVs, phones, consoles, streaming sticks. No subscription, no apps to install, about an hour of your time.","url":"https://ahardkore.github.io/adblockerpro/"}</script>
 </head>
 <body>
+<a class="skip-link" href="#main-content">Skip to content</a>
 
 <header class="site-head">
   <div class="wrap">
     <a class="brand" href="index.html"><span class="logo">🛡️</span> adblockerpro</a>
-    <nav class="site-nav" id="site-nav">
-      <a href="index.html">Home</a>
+    <nav class="site-nav" id="site-nav" aria-label="Primary navigation">
+      <a href="index.html" aria-current="page">Home</a>
       <a href="hardware.html">What you need</a>
       <a href="setup.html">Setup guide</a>
       <a href="faq.html">Help &amp; FAQ</a>
@@ -41,13 +52,14 @@
         <span aria-hidden="true" class="theme-ico">🌙</span>
       </button>
       <button class="icon-btn nav-toggle" id="nav-toggle" type="button"
-              aria-label="Menu" aria-expanded="false" aria-controls="site-nav">
+              aria-label="Open menu" aria-expanded="false" aria-controls="site-nav">
         <span class="bars" aria-hidden="true"></span>
       </button>
     </div>
   </div>
 </header>
 
+<main id="main-content">
 <section class="hero">
   <div class="wrap hero-grid">
     <div>
@@ -114,7 +126,9 @@
     <h2>Honest expectations</h2>
     <p class="section-sub">So you are not disappointed on day one.</p>
     <table class="compare">
-      <tr><th>What it does well</th><th>What it can't do</th></tr>
+      <caption>What DNS filtering can and cannot block</caption>
+      <thead><tr><th scope="col">What it does well</th><th scope="col">What it can't do</th></tr></thead>
+      <tbody>
       <tr>
         <td>Banner ads, pop-ups, tracking pixels and telemetry on every device, with nothing installed on them.</td>
         <td><b>YouTube ads.</b> They come from the same addresses as the videos, so no DNS filter can remove them.</td>
@@ -131,10 +145,10 @@
         <td>Works on guest Wi-Fi, consoles, e-readers, anything that uses your router.</td>
         <td><b>Devices that ignore your router</b> (some Chromecasts, phones with private DNS on). The guide covers how to force those too.</td>
       </tr>
+    </tbody>
     </table>
     <div class="callout good">
-      <b>Typical result:</b> 15–35% of all look-ups blocked, several hundred megabytes of
-      ads not downloaded per week, and a noticeably quieter smart TV.
+      <b>Example result:</b> Some homes report 15–35% of look-ups blocked and less advertising traffic, but results vary widely with the devices, apps and lists you use.
     </div>
   </div>
 </section>
@@ -179,6 +193,8 @@
     </div>
   </div>
 </section>
+
+</main>
 
 <footer class="site-foot">
   <div class="wrap">
