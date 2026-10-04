@@ -55,7 +55,7 @@ func TestCacheSaveLoadRoundTrip(t *testing.T) {
 		t.Fatalf("restored %d entries, want 2", n)
 	}
 	for _, name := range []string{"example.com", "example.org"} {
-		if _, ok, _ := dst.Get(CacheKey(name, 1), false); !ok {
+		if _, _, ok := dst.Get(CacheKey(name, 1), false); !ok {
 			t.Errorf("%s was not restored", name)
 		}
 	}

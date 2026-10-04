@@ -121,18 +121,33 @@ func TestGroupPropagatesError(t *testing.T) {
 	}
 }
 
-// TestGroupCancellation: a waiter that gives up must not block the others.
+// TestGroupCancellation: a waiter that gives up stops waiting immediately
+// instead of hanging on the leader's slow upstream. (The leader itself is
+// bounded by the context it passes into fn.)
 func TestGroupCancellation(t *testing.T) {
 	g := NewGroup()
 	release := make(chan struct{})
-	defer close(release)
+	leaderDone := make(chan struct{})
+
+	// Leader: holds the key until we release it.
+	go func() {
+		defer close(leaderDone)
+		_, _, _, _ = g.Do(context.Background(), "slow", func() ([]byte, string, error) {
+			<-release
+			return []byte{9}, "up", nil
+		})
+	}()
+	// Wait for the leader to register the key.
+	for i := 0; i < 100 && g.InFlight() == 0; i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
 		_, _, _, err := g.Do(ctx, "slow", func() ([]byte, string, error) {
-			<-release
-			return []byte{9}, "up", nil
+			t.Error("waiter ran fn instead of joining the leader")
+			return nil, "", nil
 		})
 		done <- err
 	}()
@@ -147,6 +162,9 @@ func TestGroupCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("cancelled waiter did not return")
 	}
+
+	close(release)
+	<-leaderDone
 }
 
 func TestGroupSequentialCallsAreNotShared(t *testing.T) {
