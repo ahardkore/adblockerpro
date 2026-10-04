@@ -182,8 +182,8 @@ type summary struct {
 		TopClients   []item  `json:"top_clients"`
 	} `json:"summary"`
 	Cache struct {
-		Entries  int     `json:"entries"`
-		HitRate  float64 `json:"hit_rate"`
+		Entries int     `json:"entries"`
+		HitRate float64 `json:"hit_rate"`
 	} `json:"cache"`
 	Upstreams []struct {
 		Name    string `json:"name"`
