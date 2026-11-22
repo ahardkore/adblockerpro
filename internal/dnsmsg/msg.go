@@ -132,7 +132,10 @@ func SetID(msg []byte, id uint16) {
 }
 
 // ParseQuestion decodes the first question of msg and returns the offset of
-// the first byte after the question section entry.
+// the first byte after the question section entry. A message claiming more
+// than one question is answered for question 1 — the resolver only models
+// single-question messages (it echoes the single question back), so extra
+// claimed questions are ignored rather than answered.
 func ParseQuestion(msg []byte) (Question, int, error) {
 	h, err := ParseHeader(msg)
 	if err != nil {

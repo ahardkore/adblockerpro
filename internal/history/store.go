@@ -73,6 +73,16 @@ type DayStat struct {
 	Bytes   int64  `json:"bytes"`
 }
 
+// maxCachedDays bounds how many parsed shards are kept in memory, so a long
+// retention window does not turn the dashboard into a memory hog.
+const maxCachedDays = 8
+
+type cachedShard struct {
+	mtime time.Time
+	size  int64
+	recs  []Record
+}
+
 // Store writes and reads the history shards.
 type Store struct {
 	dir       string
@@ -87,6 +97,11 @@ type Store struct {
 
 	// writes counts records appended since start-up, for the dashboard.
 	writes int64
+
+	// cache holds decoded shards keyed by day, invalidated on write or on a
+	// file change, so dashboard queries do not re-read and re-decode every
+	// day on every API call.
+	cache map[string]*cachedShard
 }
 
 // Open prepares the store. retentionDays <= 0 keeps shards for 30 days.
@@ -97,7 +112,7 @@ func Open(dir string, retentionDays int) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("history dir: %w", err)
 	}
-	s := &Store{dir: dir, retention: retentionDays}
+	s := &Store{dir: dir, retention: retentionDays, cache: map[string]*cachedShard{}}
 	if err := s.rollover(time.Now().UTC()); err != nil {
 		return nil, err
 	}
@@ -135,7 +150,7 @@ func (s *Store) rolloverLocked(t time.Time) error {
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		newFile = true
 	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return fmt.Errorf("open shard %s: %w", day, err)
 	}
@@ -175,6 +190,7 @@ func (s *Store) Append(e stats.Entry) error {
 	if _, err := s.w.Write(rec); err != nil {
 		return err
 	}
+	delete(s.cache, dayKey(e.Time))
 	s.writes++
 	s.pending++
 	if s.pending >= 256 {
@@ -360,17 +376,33 @@ func decode(b []byte) (Record, error) {
 
 /* ------------------------------ reading ------------------------------- */
 
-// readShard returns every record in a day file, oldest first.
+// readShard returns every record in a day file, oldest first. Shards are
+// parsed once and kept in memory, keyed by file mtime and size, so a
+// dashboard page loading its charts does not re-read every shard.
 func (s *Store) readShard(day string) ([]Record, error) {
-	data, err := os.ReadFile(s.shardPath(day))
+	path := s.shardPath(day)
+	fi, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	cached, ok := s.cache[day]
+	s.mu.Unlock()
+	if ok && cached.mtime.Equal(fi.ModTime()) && cached.size == fi.Size() {
+		return cached.recs, nil
+	}
+
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
 	if len(data) < len(fileMagic) {
 		return nil, nil
 	}
-	if string(data[:7]) != string(fileMagic[:7]) {
-		return nil, fmt.Errorf("history: %s is not a shard", day)
+	// The version byte is checked too — a shard written by a different
+	// format version is never decoded with this one.
+	if string(data[:len(fileMagic)]) != string(fileMagic[:]) {
+		return nil, fmt.Errorf("history: %s has an unsupported format version", day)
 	}
 	out := make([]Record, 0, 1024)
 	off := len(fileMagic)
@@ -387,6 +419,25 @@ func (s *Store) readShard(day string) ([]Record, error) {
 		}
 		out = append(out, rec)
 	}
+
+	s.mu.Lock()
+	if len(s.cache) >= maxCachedDays {
+		// Evict the oldest-dated day first: the current day is always kept.
+		var oldest string
+		for k := range s.cache {
+			if k == day {
+				continue
+			}
+			if oldest == "" || k < oldest {
+				oldest = k
+			}
+		}
+		if oldest != "" {
+			delete(s.cache, oldest)
+		}
+	}
+	s.cache[day] = &cachedShard{mtime: fi.ModTime(), size: fi.Size(), recs: out}
+	s.mu.Unlock()
 	return out, nil
 }
 
@@ -417,7 +468,8 @@ func (f Filter) matches(r Record) bool {
 	if f.Status != "" && r.Status != f.Status {
 		return false
 	}
-	if f.Client != "" && r.Client != f.Client && !strings.EqualFold(r.Device, f.Client) {
+	if f.Client != "" && r.Client != f.Client && r.Client != stats.HashClient(f.Client) &&
+		!strings.EqualFold(r.Device, f.Client) {
 		return false
 	}
 	if f.Domain != "" && !strings.EqualFold(r.Domain, f.Domain) {
@@ -549,11 +601,32 @@ func (s *Store) TopDomains(since time.Time, blockedOnly bool, n int) []stats.Top
 	return out
 }
 
+// SetRetention changes how long shards are kept. It takes effect on the
+// next prune cycle.
+func (s *Store) SetRetention(days int) {
+	if days <= 0 {
+		days = 30
+	}
+	s.mu.Lock()
+	s.retention = days
+	s.mu.Unlock()
+}
+
+// Retention returns the current retention window.
+func (s *Store) Retention() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.retention
+}
+
 // Prune deletes shards older than the retention window.
 func (s *Store) Prune() error {
 	cutoff := dayKey(time.Now().UTC().AddDate(0, 0, -s.retention))
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	for _, day := range s.Days() {
 		if day < cutoff {
+			delete(s.cache, day)
 			_ = os.Remove(s.shardPath(day))
 		}
 	}
@@ -644,7 +717,10 @@ func (s *Store) ClientReport(client string, since time.Time, topN int) ClientRep
 			continue
 		}
 		for _, r := range recs {
-			if r.Client != client || r.Time.Before(since) {
+			if r.Client != client && r.Client != stats.HashClient(client) {
+				continue
+			}
+			if r.Time.Before(since) {
 				continue
 			}
 			rep.Total++

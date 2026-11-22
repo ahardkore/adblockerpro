@@ -90,7 +90,7 @@ func (s *Server) handleHistoryDaily(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"days":        s.History.Daily(days),
 		"top_blocked": s.History.TopDomains(since, true, 15),
-		"top_allowed": s.History.TopDomains(since, false, 15),
+		"top_queried": s.History.TopDomains(since, false, 15),
 		"bytes":       s.History.DiskUsage(),
 	})
 }
@@ -155,8 +155,15 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 		if !replaced {
 			list = append(list, sc)
 		}
-		s.Config.Schedules = list
+		// Validate the whole candidate list before mutating anything — the
+		// live engine, config and disk must never end up disagreeing.
+		probe := schedule.New()
+		if err := probe.Set(list); err != nil {
+			badRequest(w, err.Error())
+			return
+		}
 		s.Schedules.Set(list)
+		s.Config.Schedules = list
 		s.saveConfig()
 		s.Cache.Flush()
 		writeJSON(w, http.StatusOK, sc)
@@ -166,8 +173,14 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 		list := s.Config.Schedules
 		for i := range list {
 			if list[i].ID == id {
-				s.Config.Schedules = append(list[:i], list[i+1:]...)
-				s.Schedules.Set(s.Config.Schedules)
+				candidate := append(list[:i], list[i+1:]...)
+				probe := schedule.New()
+				if err := probe.Set(candidate); err != nil {
+					badRequest(w, err.Error())
+					return
+				}
+				s.Schedules.Set(candidate)
+				s.Config.Schedules = candidate
 				s.saveConfig()
 				s.Cache.Flush()
 				writeJSON(w, http.StatusOK, map[string]string{"status": "removed"})
@@ -320,7 +333,10 @@ func (s *Server) handleDoH(w http.ResponseWriter, r *http.Request) {
 
 	clientIP := net.ParseIP(clientHost(r))
 	if clientIP == nil {
-		clientIP = net.IPv4(127, 0, 0, 1)
+		// Refuse rather than guess: a client whose address we cannot read
+		// is a client we cannot check.
+		http.Error(w, "undetermined client", http.StatusBadRequest)
+		return
 	}
 	resp := s.DNS.Handle(r.Context(), query, clientIP, "doh")
 	if len(resp) == 0 {
@@ -333,13 +349,13 @@ func (s *Server) handleDoH(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(resp)
 }
 
+// clientHost reports the peer client. The address is taken from the actual
+// connection, never from X-Forwarded-For: that header is trivially spoofable
+// by anything on the network, so trusting it would let a client pass the
+// private/loopback check by claiming to be one. Behind a reverse proxy this
+// yields the proxy's address, which is the right default — if you proxy with
+// a real client address, put the proxy in front and restrict it there.
 func clientHost(r *http.Request) string {
-	if fwd := r.Header.Get("X-Forwarded-For"); fwd != "" {
-		if i := strings.IndexByte(fwd, ','); i > 0 {
-			return strings.TrimSpace(fwd[:i])
-		}
-		return strings.TrimSpace(fwd)
-	}
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		return r.RemoteAddr
@@ -448,19 +464,33 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		badRequest(w, err.Error())
 		return
 	}
+	// Probe the schedule list before mutating any live state — a bad backup
+	// must not leave the running resolver in a half-restored state.
+	probe := schedule.New()
+	if err := probe.Set(incoming.Schedules); err != nil {
+		badRequest(w, err.Error())
+		return
+	}
 
 	s.Config.DNS = incoming.DNS
 	s.Config.Lists = incoming.Lists
 	s.Config.Rules = incoming.Rules
 	s.Config.Devices = incoming.Devices
 	s.Config.Schedules = incoming.Schedules
+	// Flipping history on or off at runtime needs a restart — the history
+	// store is built at start-up. Retention changes apply live.
+	restartRequired := s.Config.History.Enabled != incoming.History.Enabled
+	if s.History != nil && s.History.Retention() != incoming.History.RetentionDays {
+		s.History.SetRetention(incoming.History.RetentionDays)
+	}
+
 	s.Config.DHCP = incoming.DHCP
 	s.Config.Log = incoming.Log
 	s.Config.History = incoming.History
 
 	s.Engine.SetRules(s.Config.Rules)
 	s.Devices.Set(s.Config.Devices)
-	s.Schedules.Set(s.Config.Schedules)
+	s.Schedules.Set(incoming.Schedules)
 	s.Updater.SetSources(s.Config.Lists.Sources)
 	if s.DHCP != nil {
 		s.DHCP.SetConfig(s.Config.DHCP)
@@ -474,13 +504,18 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	s.saveConfig()
 	s.Updater.LoadFromCache()
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"status":    "restored",
 		"rules":     len(s.Config.Rules),
 		"devices":   len(s.Config.Devices),
 		"schedules": len(s.Config.Schedules),
 		"lists":     len(s.Config.Lists.Sources),
-	})
+	}
+	if restartRequired {
+		resp["restart_required"] = true
+		resp["note"] = "restart adblockerpro for the history change to take effect"
+	}
+	writeJSON(w, http.StatusOK, resp)
 }
 
 /* -------------------------------- misc --------------------------------- */
@@ -610,7 +645,11 @@ func (s *Server) handleDeviceClients(w http.ResponseWriter, r *http.Request) {
 	out := make([]row, 0, len(items))
 	for _, it := range items {
 		rr := row{Client: it.Name, Queries: it.Count}
-		rr.Name = s.Devices.Lookup(net.ParseIP(it.Name)).Name
+		// History may store privacy-mode pseudonyms; those cannot be
+		// resolved to a device name.
+		if !strings.HasPrefix(it.Name, "anon-") {
+			rr.Name = s.Devices.Lookup(net.ParseIP(it.Name)).Name
+		}
 		out = append(out, rr)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"enabled": true, "days": days, "clients": out})

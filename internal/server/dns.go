@@ -59,11 +59,27 @@ type DNS struct {
 	// prefetch refreshes popular entries before they expire.
 	prefetch bool
 
+	// udpTasks queues inbound datagrams for the bounded worker pool below.
+	// Unbuffered on purpose: a quick Full error lets us shed load fast.
+	udpTasks chan udpTask
+
 	udp     *net.UDPConn
 	tcpLn   net.Listener
 	addr    string
 	started time.Time
 	wg      sync.WaitGroup
+}
+
+// udpWorkers bounds how many queries are handled concurrently over UDP.
+// Each worker runs a timeout-bounded upstream exchange, so 32 keeps a
+// streaming household comfortable without turning a burst into thousands of
+// goroutines.
+const udpWorkers = 32
+
+// udpTask is one inbound datagram queued for the pool.
+type udpTask struct {
+	query []byte
+	addr  *net.UDPAddr
 }
 
 // forward is one conditional-forwarding route.
@@ -191,18 +207,62 @@ func (s *DNS) ListenAndServe(ctx context.Context) error {
 	}
 
 	s.udp, s.tcpLn, s.started = uc, ln, time.Now()
+	s.udpTasks = make(chan udpTask)
 	s.Log.Info("dns listening", "addr", s.addr, "proto", "udp+tcp")
 
-	s.wg.Add(3)
+	s.wg.Add(3 + udpWorkers)
 	go func() { defer s.wg.Done(); s.serveUDP(ctx) }()
 	go func() { defer s.wg.Done(); s.serveTCP(ctx) }()
 	go func() { defer s.wg.Done(); s.runPrefetch(ctx) }()
+	for i := 0; i < udpWorkers; i++ {
+		go func() { defer s.wg.Done(); s.udpWorker(ctx) }()
+	}
 
 	<-ctx.Done()
 	_ = uc.Close()
 	_ = ln.Close()
+	// Workers exit on ctx.Done; anything they are still working on finishes
+	// bounded work. We deliberately do NOT close the queue: a racing send
+	// from the read loop must not panic.
 	s.wg.Wait()
 	return nil
+}
+
+// udpWorker drains the datagram queue until the listener shuts down.
+func (s *DNS) udpWorker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case t, ok := <-s.udpTasks:
+			if !ok {
+				return
+			}
+			s.handleUDPQuery(ctx, t.query, t.addr)
+		}
+	}
+}
+
+// handleUDPQuery processes one datagram and writes the response. It runs
+// inside a bounded pool, so a burst of queries can never spawn more than
+// udpWorkers concurrent exchanges.
+func (s *DNS) handleUDPQuery(ctx context.Context, query []byte, addr *net.UDPAddr) {
+	resp := s.Handle(ctx, query, addr.IP, "udp")
+	if len(resp) == 0 {
+		return
+	}
+	// UDP answers must fit the client's buffer; signal truncation
+	// so well-behaved clients retry over TCP.
+	if len(resp) > 512 {
+		if h, err := dnsmsg.ParseHeader(resp); err == nil && h.ANCount > 0 {
+			if trunc := truncate(resp); trunc != nil {
+				resp = trunc
+			}
+		}
+	}
+	if _, err := s.udp.WriteToUDP(resp, addr); err != nil && ctx.Err() == nil {
+		s.Log.Debug("udp write", "err", err, "client", addr.IP.String())
+	}
 }
 
 // Addr reports the listen address.
@@ -229,24 +289,16 @@ func (s *DNS) serveUDP(ctx context.Context) {
 		}
 		query := make([]byte, n)
 		copy(query, buf[:n])
-		go func(query []byte, addr *net.UDPAddr) {
-			resp := s.Handle(ctx, query, addr.IP, "udp")
-			if len(resp) == 0 {
-				return
+		// The pool is bounded: if every worker is busy, answer REFUSED
+		// immediately rather than growing goroutines and memory past the
+		// Pi's budget. Well-behaved clients simply retry over TCP.
+		select {
+		case s.udpTasks <- udpTask{query, addr}:
+		default:
+			if resp := dnsmsg.Error(query, dnsmsg.RcodeRefused); resp != nil {
+				_, _ = s.udp.WriteToUDP(resp, addr)
 			}
-			// UDP answers must fit the client's buffer; signal truncation
-			// so well-behaved clients retry over TCP.
-			if len(resp) > 512 {
-				if h, err := dnsmsg.ParseHeader(resp); err == nil && h.ANCount > 0 {
-					if trunc := truncate(resp); trunc != nil {
-						resp = trunc
-					}
-				}
-			}
-			if _, err := s.udp.WriteToUDP(resp, addr); err != nil && ctx.Err() == nil {
-				s.Log.Debug("udp write", "err", err, "client", addr.IP.String())
-			}
-		}(query, addr)
+		}
 	}
 }
 

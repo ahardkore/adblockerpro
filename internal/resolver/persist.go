@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/ahardkore/adblockerpro/internal/dnsmsg"
 )
 
 // Cache persistence: a reboot normally throws away everything the resolver
@@ -50,7 +52,7 @@ func (c *Cache) Save(path string) error {
 		buf = append(buf, it.msg...)
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, buf, 0o644); err != nil {
+	if err := os.WriteFile(tmp, buf, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)
@@ -63,7 +65,9 @@ func (c *Cache) Load(path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if len(data) < len(cacheMagic) || string(data[:7]) != string(cacheMagic[:7]) {
+	// The version byte is checked too — a cache written by a different
+	// format version is never read by this one.
+	if len(data) < len(cacheMagic) || string(data[:len(cacheMagic)]) != string(cacheMagic[:]) {
 		return 0, errors.New("resolver: not a cache file")
 	}
 	off := len(cacheMagic)
@@ -103,6 +107,21 @@ func (c *Cache) PutUntil(key string, msg []byte, expires time.Time) {
 	defer c.mu.Unlock()
 	if el, ok := c.items[key]; ok {
 		e := el.Value.(*cacheEntry)
+		// Put records this call as the birth time of the entry, which would
+		// age the TTLs back from "now" and make restored answers look fresher
+		// than they really are. Replay against the original expiry instead:
+		// the message is stored unaged, so storing the birth time as
+		// expires-minus-the-clamped-TTL makes AgeTTLs honest.
+		if info, err := dnsmsg.ScanTTLs(msg); err == nil && info.MinTTL > 0 {
+			ttl := time.Duration(info.MinTTL) * time.Second
+			if ttl < c.minTTL {
+				ttl = c.minTTL
+			}
+			if c.maxTTL > 0 && ttl > c.maxTTL {
+				ttl = c.maxTTL
+			}
+			e.stored = expires.Add(-ttl)
+		}
 		e.expires = expires
 	}
 }

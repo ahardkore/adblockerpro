@@ -364,14 +364,26 @@ func (u *Updater) fetch(ctx context.Context, s Source) ([]string, int64, error) 
 	if err != nil {
 		return nil, 0, err
 	}
-	// Cap a single list at 128 MiB of raw text.
-	size, err = io.Copy(f, io.LimitReader(reader, 128<<20))
+	// Cap a single list at 128 MiB of raw text. A list that reaches the cap
+	// is refused, not silently truncated — a half-parsed blocklist is a
+	// leak of exactly the ads it was supposed to block.
+	const maxListBytes = 128 << 20
+	size, err = io.Copy(f, io.LimitReader(reader, maxListBytes))
 	if cerr := f.Close(); err == nil {
 		err = cerr
 	}
 	if err != nil {
 		os.Remove(tmp)
 		return nil, 0, err
+	}
+	if size == maxListBytes {
+		// The cap was reached — probe for one more byte. Anything left means
+		// the source is over the cap and must be refused, not truncated.
+		extra, _ := io.ReadAll(io.LimitReader(reader, 1))
+		if len(extra) > 0 {
+			os.Remove(tmp)
+			return nil, 0, fmt.Errorf("list exceeds the 128 MiB cap — refusing to load a truncated list; split it or raise the cap")
+		}
 	}
 	if err := os.Rename(tmp, u.cachePath(s.ID)); err != nil {
 		os.Remove(tmp)

@@ -63,6 +63,38 @@ detect_arch() {
   esac
 }
 
+# verify_checksum <asset-name> <local-file>
+# Verifies the local binary against the release's SHA256SUMS. The install
+# path is documented as a curl | sudo bash flow, and an unverified binary
+# there is a supply-chain risk, not a convenience. Fails loudly with a
+# message on stderr; callers decide whether the failure is fatal.
+verify_checksum() {
+  local asset="$1" file="$2"
+  local url_checksums="https://github.com/$REPO/releases/latest/download/SHA256SUMS"
+  local tmp
+  tmp="$(mktemp)"
+  if ! curl -fsSL "$url_checksums" -o "$tmp"; then
+    rm -f "$tmp"
+    echo "could not download the release checksums ($url_checksums)" >&2
+    return 1
+  fi
+  local want
+  want="$(awk -v a="$asset" '{if ($2 == a || $2 == "./" a) print $1}' "$tmp")"
+  local got
+  got="$(sha256sum "$file" | awk '{print $1}')"
+  rm -f "$tmp"
+  if [ -z "$want" ]; then
+    echo "no checksum found for $asset in the release SHA256SUMS" >&2
+    return 1
+  fi
+  if [ "$want" != "$got" ]; then
+    echo "checksum mismatch for $asset (got $got, want $want)" >&2
+    return 1
+  fi
+  log "checksum verified ($asset)"
+  return 0
+}
+
 install_binary() {
   if [ "$LOCAL_BUILD" -eq 1 ]; then
     local src
@@ -87,14 +119,19 @@ install_binary() {
   tmp="$(mktemp)"
   log "downloading $url"
   curl -fsSL "$url" -o "$tmp" || die "download failed — build locally with: make pi64 && sudo ./deploy/install.sh --local"
+  verify_checksum "adblockerpro-$arch" "$tmp" || die "no verified binary is available for $arch — build locally with: make pi64 && sudo ./deploy/install.sh --local"
   install -m 0755 "$tmp" "$BIN_DIR/adblockerpro"
   rm -f "$tmp"
 
   # abpctl is the optional command line client; a missing one is not fatal.
   tmp="$(mktemp)"
   if curl -fsSL "https://github.com/$REPO/releases/latest/download/abpctl-$arch" -o "$tmp" 2>/dev/null; then
-    install -m 0755 "$tmp" "$BIN_DIR/abpctl"
-    log "installed abpctl"
+    if verify_checksum "abpctl-$arch" "$tmp"; then
+      install -m 0755 "$tmp" "$BIN_DIR/abpctl"
+      log "installed abpctl"
+    else
+      warn "abpctl checksum could not be verified — skipping it"
+    fi
   fi
   rm -f "$tmp"
 }
@@ -147,7 +184,7 @@ write_config() {
   local src
   src="$(dirname "$(dirname "$(readlink -f "$0")")")"
   if [ -f "$src/deploy/config.example.json" ]; then
-    install -o "$USER_NAME" -g "$USER_NAME" -m 0644 "$src/deploy/config.example.json" "$CONFIG_DIR/config.json"
+    install -o "$USER_NAME" -g "$USER_NAME" -m 0600 "$src/deploy/config.example.json" "$CONFIG_DIR/config.json"
   else
     # The binary writes a full default file on first start.
     sudo -u "$USER_NAME" "$BIN_DIR/adblockerpro" --config "$CONFIG_DIR/config.json" --check example.com >/dev/null 2>&1 || true
