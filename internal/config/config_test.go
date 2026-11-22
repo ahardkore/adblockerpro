@@ -125,7 +125,7 @@ func TestValidateErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := *base // shallow copy; nested slices/maps reused — the mutators
 			c.DNS = base.DNS
-			tc.mut(c)
+			tc.mut(&c)
 			err := c.Validate()
 			if err == nil {
 				t.Fatalf("expected an error containing %q, got nil", tc.match)
