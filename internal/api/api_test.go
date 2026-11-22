@@ -153,13 +153,13 @@ func TestLoginWithWrongTokenIsRejected(t *testing.T) {
 
 func TestLoginWithPassword(t *testing.T) {
 	s := newTestServer(t, func(c *config.Config) {
-		hash, err := auth.HashPassword("hunter2")
+		hash, err := auth.HashPassword("hunter22")
 		if err != nil {
 			t.Fatalf("hash: %v", err)
 		}
 		c.Web.AdminPasswordHash = hash
 	})
-	w := do(t, s, http.MethodPost, "/api/login", `{"password":"hunter2"}`, map[string]string{"Content-Type": "application/json"})
+	w := do(t, s, http.MethodPost, "/api/login", `{"password":"hunter22"}`, map[string]string{"Content-Type": "application/json"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("password login = %d: %s", w.Code, w.Body.String())
 	}
@@ -167,10 +167,10 @@ func TestLoginWithPassword(t *testing.T) {
 
 func TestLoginWithWrongPasswordIsRejected(t *testing.T) {
 	s := newTestServer(t, func(c *config.Config) {
-		hash, _ := auth.HashPassword("hunter2")
+		hash, _ := auth.HashPassword("hunter22")
 		c.Web.AdminPasswordHash = hash
 	})
-	w := do(t, s, http.MethodPost, "/api/login", `{"password":"hunter3"}`, map[string]string{"Content-Type": "application/json"})
+	w := do(t, s, http.MethodPost, "/api/login", `{"password":"hunter23"}`, map[string]string{"Content-Type": "application/json"})
 	if w.Code != http.StatusUnauthorized {
 		t.Errorf("wrong password login = %d, want 401", w.Code)
 	}
@@ -193,7 +193,7 @@ func TestStaticDashboardIsCacheNoStore(t *testing.T) {
 func TestSettingsResponseNeverLeaksSecrets(t *testing.T) {
 	s := newTestServer(t, func(c *config.Config) {
 		c.Web.AdminToken = "secret-token"
-		hash, _ := auth.HashPassword("hunter2")
+		hash, _ := auth.HashPassword("hunter22")
 		c.Web.AdminPasswordHash = hash
 	})
 	w := do(t, s, http.MethodGet, "/api/settings", "", map[string]string{"X-API-Key": "secret-token"})
