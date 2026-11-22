@@ -5,7 +5,6 @@ import (
 	"encoding/pem"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -31,7 +30,7 @@ func TestEnsureSelfSignedCreatesPair(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if !strings.Contains(cert.Subject.Organization[0], "adblockerpro") && cert.Subject.Organization[0] != "adblockerpro" {
+	if cert.Subject.Organization[0] != "adblockerpro" {
 		t.Errorf("org = %q", cert.Subject.Organization)
 	}
 

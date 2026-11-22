@@ -135,20 +135,23 @@ func TestValidateErrors(t *testing.T) {
 }
 
 func TestNormalizeUpstream(t *testing.T) {
-	cases := map[string]string{
-		"1.1.1.1":        "1.1.1.1:53",
-		"1.1.1.1:5353":   "1.1.1.1:5353",
-		"example.com":    "example.com:53",
-		"[::1]":          "[::1]:53",
-		"[::1]:5353":     "[::1]:5353",
-		"2001:db8::1":    "[2001:db8::1]:53",
-		"example.com:53": "example.com:53",
-		"":               "",
-		"   ":            "",
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"1.1.1.1", "1.1.1.1:53"},
+		{"1.1.1.1:5353", "1.1.1.1:5353"},
+		{"example.com", "example.com:53"},
+		{"[::1]", "[::1]:53"},
+		{"[::1]:5353", "[::1]:5353"},
+		{"2001:db8::1", "[2001:db8::1]:53"},
+		{"example.com:53", "example.com:53"},
+		{"", ""},
+		{"   ", ""},
 	}
-	for in, want := range cases {
-		if got := NormalizeUpstream(in); got != want {
-			t.Errorf("NormalizeUpstream(%q) = %q, want %q", in, got, want)
+	for _, tc := range cases {
+		if got := NormalizeUpstream(tc.in); got != tc.want {
+			t.Errorf("NormalizeUpstream(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
