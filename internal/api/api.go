@@ -61,10 +61,10 @@ type Server struct {
 	Deps
 	// mu serializes config-mutating handlers, so concurrent API requests
 	// cannot race each other or leak half-applied config into the resolver.
-	mu     sync.Mutex
-	mux    *http.ServeMux
-	http   *http.Server
-	https  *http.Server
+	mu    sync.Mutex
+	mux   *http.ServeMux
+	http  *http.Server
+	https *http.Server
 	// sessions holds dashboard logins; throttle slows password guessing.
 	sessions *auth.Sessions
 	throttle *auth.Throttle
