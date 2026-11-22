@@ -14,9 +14,9 @@ build:
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/adblockerpro
 	go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(CTL) ./cmd/abpctl
 
-## test: run the unit tests
+## test: run the unit tests (with the race detector)
 test:
-	go test ./... -count=1
+	go test ./... -count=1 -race
 
 ## vet: static analysis
 vet:

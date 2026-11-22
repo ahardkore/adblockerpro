@@ -174,7 +174,9 @@ func main() {
 	}
 
 	schedules := schedule.New()
-	schedules.Set(cfg.Schedules)
+	if err := schedules.Set(cfg.Schedules); err != nil {
+		log.Warn("some configured schedules could not be used", "err", err)
+	}
 
 	dnsSrv := server.NewDNS(cfg, server.Deps{
 		Engine:    engine,
@@ -224,7 +226,9 @@ func main() {
 			engine.SetBlockSubdomains(c.DNS.BlockSubdomains)
 			pool.Set(buildUpstreams(c)...)
 			dnsSrv.ApplyConfig(c)
-			schedules.Set(c.Schedules)
+			if err := schedules.Set(c.Schedules); err != nil {
+				log.Warn("some configured schedules could not be used", "err", err)
+			}
 			dhcpSrv.SetConfig(c.DHCP)
 			cache.Flush()
 			log.Info("configuration reloaded")

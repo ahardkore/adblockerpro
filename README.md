@@ -1,5 +1,9 @@
 # adblockerpro
 
+[![CI](https://github.com/ahardkore/adblockerpro/actions/workflows/ci.yml/badge.svg)](https://github.com/ahardkore/adblockerpro/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.22-00ADD8)](go.mod)
+
 A Raspberry Pi you plug into your home network that stops ads on **every**
 device behind it — phones, laptops, consoles, and especially the streaming
 hardware you cannot install an ad blocker on: smart TVs, Fire Sticks, Roku,
@@ -51,8 +55,10 @@ Features:
   box as a single JSON file.
 - **Cache with stale-serving** — if the internet drops, the LAN keeps
   resolving what it already knows.
-- **Safe by default** — only answers private/loopback clients, so the Pi can
-  never be abused as an open resolver.
+- **Safe by default** — only answers private/loopback clients (the
+  `dns.allowed_clients` setting), so the Pi cannot be abused as an open
+  resolver. The unauthenticated `/dns-query` endpoint is the one exception
+  and needs a trusted network, see the DoH warning below.
 
 ### How it compares to Pi-hole
 
@@ -118,6 +124,11 @@ curl -fsSL https://raw.githubusercontent.com/ahardkore/adblockerpro/main/deploy/
 The installer picks the right binary for your Pi, creates a locked-down
 `adblockerpro` service user, frees port 53 if `systemd-resolved` is holding
 it, installs the systemd unit and starts it.
+
+Downloaded binaries are verified against the release's `SHA256SUMS` before
+they are run — if the checksum does not match or cannot be downloaded, the
+install stops and tells you to build locally instead of installing an
+unverified binary.
 
 From a clone instead:
 
@@ -230,6 +241,28 @@ abpctl check ads.example.com
 abpctl backup ~/abp-backup.json
 ```
 
+The backup contains the whole configuration — **including the admin token
+and the password hash** — so restore can rebuild the box. `abpctl` writes
+it with owner-only permissions, but treat the file as a secret: do not
+share it, and keep it out of cloud sync.
+
+To restore a backup into a running instance, POST the file to the API:
+
+```bash
+curl -X POST -H "X-API-Key: <token>" \
+  --data-binary @~/abp-backup.json \
+  http://<pi-ip>:8080/api/restore
+```
+
+The restore never moves the listen address, the data directory, or the web
+credentials — those are set at start-up — and it refuses a backup whose
+schedules or devices do not parse, reporting the offending entries instead
+of silently dropping them. Restoring a backup that turns the history store
+on or off needs a restart; retention changes apply live. The `restart_required`
+flag in the JSON response tells you when a restart is needed, and the
+response body names the rules, devices, schedules and lists that were
+restored.
+
 It talks to the local API; set `ABP_ADDR` and `ABP_TOKEN` (or pass `-addr`
 and `-token`) when the dashboard is not on `http://127.0.0.1:8080`.
 
@@ -278,6 +311,19 @@ publicly trusted certificate, so for phones put a real certificate in
 `web.tls.cert_file` (or a reverse proxy in front). Your phone then keeps the
 same filtering when it leaves the house.
 
+**Read this before exposing it.** `/dns-query` is unauthenticated by design
+— it is a resolver, the same way the UDP listener is — so anything on your
+LAN (or in the world, if the port is exposed) can send lookups through it.
+That is the feature: it is the *only* way to use this resolver with a
+device that does not speak the LAN. The resolver still only answers clients
+from your configured `dns.allowed_clients` (private networks by default),
+and the client address it checks is the address of the actual connection —
+spoofing `X-Forwarded-For` will not help. What that means: this is a
+private/internal service, not a public DNS API. Do not bind it to `0.0.0.0`
+with the port forwarded through your router, and if you want it reachable
+from outside the LAN, put a reverse proxy in front of it that restricts and
+identifies clients, and understand the proxy sees the answers.
+
 ## Troubleshooting
 
 ```bash
@@ -303,7 +349,7 @@ others or move them to another port.
 ## Development
 
 ```bash
-make test          # unit tests
+make test          # unit tests, with the race detector
 make vet
 make run           # DNS on :5353, dashboard on :8080, no root needed
 dig @127.0.0.1 -p 5353 doubleclick.net
@@ -355,9 +401,25 @@ POST /api/password     {"current":"…","new":"…"}
 GET  /api/sessions     DELETE /api/sessions
 GET  /api/backup       POST /api/restore
 GET  /api/health
-GET  /metrics                            # Prometheus
+GET  /metrics                            # Prometheus (API key required)
 GET|POST /dns-query                      # RFC 8484 DNS-over-HTTPS
 ```
+
+## Releasing
+
+The release workflow (`.github/workflows/release.yml`) runs on a tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+It builds `adblockerpro-<arch>` and `abpctl-<arch>` for `amd64` and `arm64`,
+generates `SHA256SUMS`, and publishes the binaries as a GitHub release — the
+same artifacts `deploy/install.sh` downloads, and what the checksum check
+verifies against. The version string is stamped into the binary at build
+time by `make release` (the `VERSION` variable in the Makefile), so the
+binary and the dashboard report the same version.
 
 ## Licence
 

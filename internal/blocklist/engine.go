@@ -193,19 +193,25 @@ func (e *Engine) SetRules(rules []Rule) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.rules = append([]Rule(nil), rules...)
-	e.global.allow = compile(e.rules, ActionAllow, "")
-	e.global.deny = compile(e.rules, ActionBlock, "")
-	groups := map[string]*groupRules{}
+	// One bucketing pass, then compile per bucket — the naive form re-read
+	// and re-filtered every rule for every group (O(rules × groups)).
+	buckets := map[string][]Rule{}
+	var globals []Rule
 	for _, r := range e.rules {
 		if r.Group == "" {
+			globals = append(globals, r)
 			continue
 		}
 		g := strings.ToLower(r.Group)
-		if _, ok := groups[g]; !ok {
-			groups[g] = &groupRules{
-				allow: compile(e.rules, ActionAllow, g),
-				deny:  compile(e.rules, ActionBlock, g),
-			}
+		buckets[g] = append(buckets[g], r)
+	}
+	e.global.allow = compile(globals, ActionAllow, "")
+	e.global.deny = compile(globals, ActionBlock, "")
+	groups := map[string]*groupRules{}
+	for g, rs := range buckets {
+		groups[g] = &groupRules{
+			allow: compile(rs, ActionAllow, g),
+			deny:  compile(rs, ActionBlock, g),
 		}
 	}
 	e.groups = groups

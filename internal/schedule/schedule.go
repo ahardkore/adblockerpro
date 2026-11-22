@@ -136,16 +136,25 @@ func Validate(s Schedule) error {
 	return nil
 }
 
-// Set replaces every schedule, skipping ones that do not parse.
-func (e *Engine) Set(schedules []Schedule) {
+// Set replaces every schedule, skipping ones that do not parse — the error
+// it returns names the skipped ones, so a typo in a schedule is never
+// silently invisible to the user who configured it.
+func (e *Engine) Set(schedules []Schedule) error {
 	list := make([]compiled, 0, len(schedules))
+	var skipped []string
 	for _, s := range schedules {
 		start, err := parseHHMM(s.Start)
 		if err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
 			continue
 		}
 		end, err := parseHHMM(s.End)
 		if err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
+			continue
+		}
+		if err := Validate(s); err != nil {
+			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
 			continue
 		}
 		if s.Mode == "" {
@@ -162,6 +171,10 @@ func (e *Engine) Set(schedules []Schedule) {
 	e.mu.Lock()
 	e.list = list
 	e.mu.Unlock()
+	if len(skipped) > 0 {
+		return fmt.Errorf("skipped %d schedule(s): %s", len(skipped), strings.Join(skipped, "; "))
+	}
+	return nil
 }
 
 // All returns the stored schedules.
@@ -241,6 +254,46 @@ func (e *Engine) Decision(group, domain string, now time.Time) (blocked bool, na
 	return false, ""
 }
 
+// nextChangeAt reports the next moment this schedule's active state changes
+// (a window opening or closing), scanning the previous and next 8 days so a
+// wrap-around window that is already active counts as a change due today.
+func (c compiled) nextChangeAt(now time.Time) (time.Time, bool) {
+	if c.start == c.end {
+		return time.Time{}, false // zero-length window: never changes
+	}
+	var best time.Time
+	found := false
+	consider := func(t time.Time) {
+		if !t.After(now) {
+			return
+		}
+		if !found || t.Before(best) {
+			best, found = t, true
+		}
+	}
+	loc := now.Location()
+	day0 := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc)
+	for d := -1; d < 8; d++ {
+		day := day0.AddDate(0, 0, d)
+		if !c.days[day.Weekday()] {
+			continue
+		}
+		start := time.Date(day.Year(), day.Month(), day.Day(), c.start/60, c.start%60, 0, 0, loc)
+		if c.start < c.end {
+			// Plain window ending the same day.
+			end := time.Date(day.Year(), day.Month(), day.Day(), c.end/60, c.end%60, 0, 0, loc)
+			consider(start)
+			consider(end)
+		} else {
+			// Wraps midnight: active from start until end the next day.
+			consider(start)
+			end := time.Date(day.Year(), day.Month(), day.Day()+1, c.end/60, c.end%60, 0, 0, loc)
+			consider(end)
+		}
+	}
+	return best, found
+}
+
 // NextChange reports when the schedule picture for a group changes next, so
 // the dashboard can show "bedtime starts in 40 minutes".
 func (e *Engine) NextChange(group string, now time.Time) (time.Time, bool) {
@@ -248,22 +301,20 @@ func (e *Engine) NextChange(group string, now time.Time) (time.Time, bool) {
 	defer e.mu.RUnlock()
 	var best time.Time
 	found := false
-	for i := 1; i <= 24*60; i++ {
-		t := now.Add(time.Duration(i) * time.Minute)
-		changed := false
-		for _, c := range e.list {
-			if !c.appliesTo(group) {
-				continue
-			}
-			if c.activeAt(t) != c.activeAt(now) {
-				changed = true
-				break
-			}
+	for _, c := range e.list {
+		if !c.appliesTo(group) || !c.s.Enabled {
+			continue
 		}
-		if changed {
-			best, found = t.Truncate(time.Minute), true
-			break
+		t, ok := c.nextChangeAt(now)
+		if !ok {
+			continue
 		}
+		if !found || t.Before(best) {
+			best, found = t, true
+		}
+	}
+	if found {
+		best = best.Truncate(time.Minute)
 	}
 	return best, found
 }

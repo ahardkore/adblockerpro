@@ -2,6 +2,7 @@ package resolver
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 )
@@ -56,7 +57,10 @@ func (g *Group) Do(ctx context.Context, key string, fn func() ([]byte, string, e
 	g.mu.Unlock()
 	g.started.Add(1)
 
-	c.resp, c.name, c.err = fn()
+	// A panicking fn must not take the process down and must not leak the
+	// call entry forever — a stuck call would wedge every later lookup of
+	// the same key behind a wait that only ctx.Done() can break.
+	c.resp, c.name, c.err = call(fn)
 
 	g.mu.Lock()
 	delete(g.calls, key)
@@ -67,6 +71,18 @@ func (g *Group) Do(ctx context.Context, key string, fn func() ([]byte, string, e
 		return nil, c.name, false, c.err
 	}
 	return append([]byte(nil), c.resp...), c.name, false, nil
+}
+
+// call runs fn, converting a panic into an error so callers degrade
+// gracefully instead of crashing the server process.
+func call(fn func() ([]byte, string, error)) (resp []byte, name string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			resp, name = nil, ""
+			err = fmt.Errorf("query panicked: %v", r)
+		}
+	}()
+	return fn()
 }
 
 // InFlight reports how many distinct lookups are running right now.

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/ahardkore/adblockerpro/internal/auth"
@@ -58,9 +59,12 @@ type Deps struct {
 // Server is the HTTP server for the dashboard and API.
 type Server struct {
 	Deps
-	mux   *http.ServeMux
-	http  *http.Server
-	https *http.Server
+	// mu serializes config-mutating handlers, so concurrent API requests
+	// cannot race each other or leak half-applied config into the resolver.
+	mu     sync.Mutex
+	mux    *http.ServeMux
+	http   *http.Server
+	https  *http.Server
 	// sessions holds dashboard logins; throttle slows password guessing.
 	sessions *auth.Sessions
 	throttle *auth.Throttle
@@ -89,7 +93,9 @@ func (s *Server) routes() {
 	// DNS-over-HTTPS is authenticated by nothing on purpose: it is a
 	// resolver endpoint, protected by the same client checks as UDP DNS.
 	s.mux.HandleFunc("/dns-query", s.handleDoH)
-	s.mux.HandleFunc("/metrics", s.handleMetrics)
+	// Metrics expose aggregate counters only, but they are still gated so
+	// the exact set of registered domains never sits on an open endpoint.
+	s.mux.Handle("/metrics", s.auth(s.handleMetrics))
 
 	api := map[string]http.HandlerFunc{
 		"/api/summary":          s.handleSummary,
@@ -119,7 +125,7 @@ func (s *Server) routes() {
 		"/api/setup/test":       s.handleSetupTest,
 	}
 	for path, h := range api {
-		s.mux.Handle(path, s.auth(h))
+		s.mux.Handle(path, s.auth(s.locked(h)))
 	}
 
 	static, err := fs.Sub(web.FS, "static")
@@ -127,14 +133,24 @@ func (s *Server) routes() {
 		panic(fmt.Sprintf("embed static: %v", err))
 	}
 	fileServer := http.FileServer(http.FS(static))
-	s.mux.Handle("/", noCacheHTML(fileServer))
+	s.mux.Handle("/", staticNoStore(fileServer))
 }
 
-func noCacheHTML(h http.Handler) http.Handler {
+// locked serializes the handler; config and the running resolver are only
+// safe to touch from one request at a time.
+func (s *Server) locked(h http.HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasSuffix(r.URL.Path, "/") || strings.HasSuffix(r.URL.Path, ".html") {
-			w.Header().Set("Cache-Control", "no-store")
-		}
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		h(w, r)
+	})
+}
+
+// staticNoStore keeps the dashboard UI one revalidation behind the release:
+// stale CSS or JS feels broken more often than the revalidation costs.
+func staticNoStore(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-cache")
 		h.ServeHTTP(w, r)
 	})
 }
@@ -271,11 +287,6 @@ func (s *Server) authenticated(r *http.Request) bool {
 				provided = strings.TrimPrefix(b, "Bearer ")
 			}
 		}
-		if provided == "" {
-			if c, err := r.Cookie("abp_token"); err == nil {
-				provided = c.Value
-			}
-		}
 		if provided != "" && subtle.ConstantTimeCompare([]byte(provided), []byte(token)) == 1 {
 			return true
 		}
@@ -399,7 +410,6 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 		s.sessions.Revoke(c.Value)
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Value: "", Path: "/", MaxAge: -1})
-	http.SetCookie(w, &http.Cookie{Name: "abp_token", Value: "", Path: "/", MaxAge: -1})
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
@@ -542,12 +552,21 @@ func (s *Server) handleLists(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Title string `json:"title"`
 			URL   string `json:"url"`
+			Kind  string `json:"kind"`
 		}
 		if err := decode(r, &body); err != nil || strings.TrimSpace(body.URL) == "" {
 			badRequest(w, "url is required")
 			return
 		}
-		src := s.Updater.AddSource(strings.TrimSpace(body.Title), strings.TrimSpace(body.URL))
+		kind := strings.ToLower(strings.TrimSpace(body.Kind))
+		if kind == "" {
+			kind = "block"
+		}
+		if kind != "block" && kind != "allow" {
+			badRequest(w, "kind must be \"block\" or \"allow\"")
+			return
+		}
+		src := s.Updater.AddSourceKind(strings.TrimSpace(body.Title), strings.TrimSpace(body.URL), kind)
 		s.persistSources()
 		go func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -763,8 +782,13 @@ func (s *Server) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.Reload != nil {
 			if err := s.Reload(s.Config); err != nil {
+				// Undo: the resolver keeps whatever config Reload did
+				// apply, so put the old one back before reporting the failure.
 				s.Config.DNS = old
 				s.Config.Web = oldWeb
+				if rerr := s.Reload(s.Config); rerr != nil {
+					s.Log.Warn("restoring previous config after failed reload", "err", rerr)
+				}
 				badRequest(w, err.Error())
 				return
 			}

@@ -2,6 +2,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -360,6 +361,20 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("%s must be an IPv4 address", field.name)
 			}
 		}
+		start := net.ParseIP(c.DHCP.RangeStart).To4()
+		end := net.ParseIP(c.DHCP.RangeEnd).To4()
+		if start == nil || end == nil {
+			return fmt.Errorf("dhcp.range_start and dhcp.range_end must be IPv4 addresses")
+		}
+		if bytes.Compare(start, end) > 0 {
+			return fmt.Errorf("dhcp.range_start (%s) must not be after dhcp.range_end (%s)", c.DHCP.RangeStart, c.DHCP.RangeEnd)
+		}
+		// The server address is normally a static address outside the pool,
+		// so only its validity is checked, not its position relative to the
+		// range.
+		if net.ParseIP(c.DHCP.ServerIP).To4() == nil {
+			return fmt.Errorf("dhcp.server_ip (%s) must be an IPv4 address", c.DHCP.ServerIP)
+		}
 	}
 	for _, s := range c.Schedules {
 		if err := schedule.Validate(s); err != nil {
@@ -391,7 +406,7 @@ func (c *Config) Save() error {
 	}
 	data = append(data, '\n')
 	tmp := c.path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, c.path)

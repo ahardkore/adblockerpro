@@ -71,6 +71,15 @@ type bucket struct {
 	Blocked int64 `json:"blocked"`
 }
 
+// HashClient renders an IP in the way the query log stores it when privacy
+// mode is on. It is deterministic so that reports and drill-downs can match
+// either the raw address or the hash without the address ever being
+// persisted anywhere.
+func HashClient(ip string) string {
+	sum := sha256.Sum256([]byte(ip))
+	return "anon-" + hex.EncodeToString(sum[:4])
+}
+
 // Collector aggregates query activity.
 type Collector struct {
 	mu sync.RWMutex
@@ -131,8 +140,14 @@ func (c *Collector) AnonymizeClient(ip string) string {
 	if !c.anonymize {
 		return ip
 	}
-	sum := sha256.Sum256([]byte(ip))
-	return "anon-" + hex.EncodeToString(sum[:4])
+	return HashClient(ip)
+}
+
+// AnonymizeEnabled reports whether the privacy mode is on.
+func (c *Collector) AnonymizeEnabled() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.anonymize
 }
 
 // Record adds an entry to the log and updates counters.
@@ -257,7 +272,7 @@ func (c *Collector) Recent(f QueryFilter) []Entry {
 		if f.Status != "" && e.Status != f.Status {
 			continue
 		}
-		if f.Client != "" && e.Client != f.Client {
+		if f.Client != "" && e.Client != f.Client && e.Client != HashClient(f.Client) {
 			continue
 		}
 		if search != "" &&
@@ -295,7 +310,7 @@ type Summary struct {
 	AvgMS        float64   `json:"avg_ms"`
 	Clients      int       `json:"clients"`
 	Since        time.Time `json:"since"`
-	TopAllowed   []TopItem `json:"top_allowed"`
+	TopQueried   []TopItem `json:"top_queried"`
 	TopBlocked   []TopItem `json:"top_blocked"`
 	TopClients   []TopItem `json:"top_clients"`
 	Types        []TopItem `json:"types"`
@@ -335,7 +350,7 @@ func (c *Collector) Summary(hours int) Summary {
 		Validated:  c.validated,
 		Clients:    len(c.clients),
 		Since:      c.started,
-		TopAllowed: topN(c.domains, 10),
+		TopQueried: topN(c.domains, 10),
 		TopBlocked: topN(c.blocks, 10),
 		TopClients: topN(c.clients, 10),
 		Types:      topN(c.types, 8),
@@ -427,7 +442,7 @@ func (c *Collector) Save() error {
 		return err
 	}
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, path)

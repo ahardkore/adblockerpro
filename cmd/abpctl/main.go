@@ -177,7 +177,7 @@ type summary struct {
 		BlockPercent float64 `json:"block_percent"`
 		AvgMS        float64 `json:"avg_ms"`
 		Clients      int     `json:"clients"`
-		TopAllowed   []item  `json:"top_allowed"`
+		TopQueried   []item  `json:"top_queried"`
 		TopBlocked   []item  `json:"top_blocked"`
 		TopClients   []item  `json:"top_clients"`
 	} `json:"summary"`
@@ -243,7 +243,7 @@ func (c *client) top(n int) error {
 	if err := c.get("/api/summary?hours=24", &s); err != nil {
 		return err
 	}
-	printItems("Most queried", s.Summary.TopAllowed, n)
+	printItems("Most queried", s.Summary.TopQueried, n)
 	printItems("Most blocked", s.Summary.TopBlocked, n)
 	printItems("Busiest clients", s.Summary.TopClients, n)
 	return nil
