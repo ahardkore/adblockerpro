@@ -138,12 +138,12 @@ func (s *Server) routes() {
 
 // locked serializes the handler; config and the running resolver are only
 // safe to touch from one request at a time.
-func (s *Server) locked(h http.HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+func (s *Server) locked(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		h(w, r)
-	})
+	}
 }
 
 // staticNoStore keeps the dashboard UI one revalidation behind the release:

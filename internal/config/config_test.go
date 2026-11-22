@@ -78,8 +78,6 @@ func TestLoadRejectsInvalidJSON(t *testing.T) {
 }
 
 func TestValidateErrors(t *testing.T) {
-	base := Default()
-
 	cases := []struct {
 		name  string
 		mut   func(*Config)
@@ -123,9 +121,8 @@ func TestValidateErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			c := *base // shallow copy; nested slices/maps reused — the mutators
-			c.DNS = base.DNS
-			tc.mut(&c)
+			c := Default()
+			tc.mut(c)
 			err := c.Validate()
 			if err == nil {
 				t.Fatalf("expected an error containing %q, got nil", tc.match)
