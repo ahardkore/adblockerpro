@@ -154,22 +154,6 @@ sudo ./deploy/install.sh --local
 No router control? Set the Pi as the DNS server manually in each device's
 network settings.
 
-## Website
-
-A four-page static site lives in [`site/`](site/): a landing page, the
-hardware shopping list, the eight-step setup walkthrough and a help/FAQ page.
-It has no build step — open `index.html`, or publish the folder anywhere.
-
-`.github/workflows/pages.yml` deploys it to GitHub Pages on pushes to `main`
-(turn it on once under **Settings → Pages → Source: GitHub Actions**).
-
-**Affiliate links live in one file:** [`site/products.json`](site/products.json).
-Put your Amazon Associates tag in `affiliate_tag` and the product URLs in each
-`url` field; the tag is appended automatically, links are rendered with
-`rel="nofollow sponsored noopener"`, and the disclosure line is printed under
-every kit. Products with an empty `url` show a greyed-out "link coming soon"
-button, so a partly filled list still looks deliberate. See
-[`site/README.md`](site/README.md).
 
 ## Dashboard
 
