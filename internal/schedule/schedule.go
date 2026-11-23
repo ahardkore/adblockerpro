@@ -143,6 +143,12 @@ func (e *Engine) Set(schedules []Schedule) error {
 	list := make([]compiled, 0, len(schedules))
 	var skipped []string
 	for _, s := range schedules {
+		// The empty-mode default must happen before validation, or a
+		// schedule with no mode would be rejected by it and silently
+		// skipped instead of applied as block-all.
+		if s.Mode == "" {
+			s.Mode = ModeBlockAll
+		}
 		start, err := parseHHMM(s.Start)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
@@ -156,9 +162,6 @@ func (e *Engine) Set(schedules []Schedule) error {
 		if err := Validate(s); err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
 			continue
-		}
-		if s.Mode == "" {
-			s.Mode = ModeBlockAll
 		}
 		list = append(list, compiled{
 			s:       s,

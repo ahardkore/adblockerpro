@@ -3,6 +3,7 @@ package api
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/devices"
+	"github.com/ahardkore/adblockerpro/internal/history"
 	"github.com/ahardkore/adblockerpro/internal/schedule"
 	"github.com/ahardkore/adblockerpro/internal/server"
 	"github.com/ahardkore/adblockerpro/internal/stats"
@@ -237,5 +239,108 @@ func TestSettingsPutRejectsInvalidValues(t *testing.T) {
 	}
 	if w.Code != http.StatusBadRequest {
 		t.Errorf("bogus sinkhole status = %d, want 400", w.Code)
+	}
+}
+
+func TestRestoreRollsBackWhenReloadFails(t *testing.T) {
+	s := newTestServer(t, func(c *config.Config) {
+		c.Web.AdminToken = "secret-token"
+		c.Rules = []blocklist.Rule{{Pattern: "old.example.com", Action: blocklist.ActionBlock}}
+		c.Devices = []config.Device{{Match: "192.168.1.10", Name: "old-pi"}}
+		c.Schedules = []schedule.Schedule{{ID: "s1", Name: "OldBedtime", Enabled: true, Start: "22:00", End: "23:00", Mode: schedule.ModeBlockAll}}
+		c.Lists.Sources = []blocklist.Source{{ID: "src1", Title: "OldList", URL: "https://example.org/old.txt", Enabled: true}}
+		c.History.RetentionDays = 5
+	})
+	// Wire a history store so the retention side effect has something to restore.
+	store, err := history.Open(t.TempDir(), 5)
+	if err != nil {
+		t.Fatalf("open history: %v", err)
+	}
+	s.History = store
+	// Apply the old state to the live engine/registries before the restore.
+	s.Engine.SetRules(s.Config.Rules)
+	s.Devices.Set(s.Config.Devices)
+	s.Schedules.Set(s.Config.Schedules)
+	s.Updater.SetSources(s.Config.Lists.Sources)
+	s.Reload = func(*config.Config) error { return errors.New("reload boom") }
+
+	body := `{"config":{
+		"dns":{"listen":"0.0.0.0","port":53,"upstreams":["1.1.1.1:53"],"sinkhole":"zero-ip","block_ttl":60,"block_subdomains":true,"block_cname_cloaking":true},
+		"lists":{"update_interval_hours":12,"sources":[{"id":"src2","title":"NewList","url":"https://example.org/new.txt","enabled":true}]},
+		"rules":[{"pattern":"new.example.com","action":"block"}],
+		"devices":[{"match":"192.168.1.20","name":"new-pi"}],
+		"schedules":[{"id":"s2","name":"NewBedtime","enabled":true,"start":"22:00","end":"23:00","mode":"block-all"}],
+		"dhcp":{"enabled":false},
+		"log":{"level":"info","query_log_size":100,"anonymize_clients":false,"persist_stats":false},
+		"history":{"enabled":true,"retention_days":3}
+	}}`
+	w := do(t, s, http.MethodPost, "/api/restore", body, map[string]string{"X-API-Key": "secret-token"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("restore = %d, want 400: %s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "reload boom") {
+		t.Errorf("response = %s, want the reload error surfaced", w.Body.String())
+	}
+	// Everything must be back to the pre-restore state — a failed reload
+	// must not leave the resolver half-restored.
+	if rules := s.Engine.Rules(); len(rules) != 1 || rules[0].Pattern != "old.example.com" {
+		t.Errorf("engine rules = %+v, want old rules restored", rules)
+	}
+	if len(s.Config.Rules) != 1 || s.Config.Rules[0].Pattern != "old.example.com" {
+		t.Errorf("config rules = %+v, want old rules restored", s.Config.Rules)
+	}
+	if len(s.Config.Devices) != 1 || s.Config.Devices[0].Name != "old-pi" {
+		t.Errorf("devices = %+v, want old devices restored", s.Config.Devices)
+	}
+	if len(s.Config.Schedules) != 1 || s.Config.Schedules[0].Name != "OldBedtime" {
+		t.Errorf("schedules = %+v, want old schedules restored", s.Config.Schedules)
+	}
+	if all := s.Schedules.All(); len(all) != 1 || all[0].Name != "OldBedtime" {
+		t.Errorf("live schedules = %+v, want old schedules restored", all)
+	}
+	if len(s.Updater.Sources()) != 1 || s.Updater.Sources()[0].ID != "src1" {
+		t.Errorf("updater sources = %+v, want old sources restored", s.Updater.Sources())
+	}
+	if s.Config.History.RetentionDays != 5 {
+		t.Errorf("history retention = %d, want restored 5", s.Config.History.RetentionDays)
+	}
+	if s.History.Retention() != 5 {
+		t.Errorf("live history retention = %d, want restored 5", s.History.Retention())
+	}
+	if s.Config.Log.QueryLogSize != 20000 {
+		t.Errorf("log query_log_size = %d, want restored 20000", s.Config.Log.QueryLogSize)
+	}
+}
+
+func TestRestoreAppliesOnSuccess(t *testing.T) {
+	s := newTestServer(t, func(c *config.Config) {
+		c.Web.AdminToken = "secret-token"
+		c.Schedules = []schedule.Schedule{{ID: "s1", Name: "OldBedtime", Enabled: true, Start: "22:00", End: "23:00", Mode: schedule.ModeBlockAll}}
+	})
+	body := `{"config":{
+		"dns":{"listen":"0.0.0.0","port":53,"upstreams":["1.1.1.1:53"],"sinkhole":"zero-ip","block_ttl":60,"block_subdomains":true,"block_cname_cloaking":true},
+		"lists":{"update_interval_hours":12,"sources":[{"id":"src2","title":"NewList","url":"https://example.org/new.txt","enabled":true}]},
+		"rules":[{"pattern":"new.example.com","action":"block"}],
+		"devices":[{"match":"192.168.1.20","name":"new-pi"}],
+		"schedules":[{"id":"s2","name":"NewBedtime","enabled":true,"start":"22:00","end":"23:00","mode":"block-all"}],
+		"dhcp":{"enabled":false},
+		"log":{"level":"info","query_log_size":100,"anonymize_clients":false,"persist_stats":false},
+		"history":{"enabled":false,"retention_days":3}
+	}}`
+	w := do(t, s, http.MethodPost, "/api/restore", body, map[string]string{"X-API-Key": "secret-token"})
+	if w.Code != http.StatusOK {
+		t.Fatalf("restore = %d, want 200: %s", w.Code, w.Body.String())
+	}
+	if len(s.Config.Rules) != 1 || s.Config.Rules[0].Pattern != "new.example.com" {
+		t.Errorf("rules = %+v, want new rules applied", s.Config.Rules)
+	}
+	if len(s.Config.Devices) != 1 || s.Config.Devices[0].Name != "new-pi" {
+		t.Errorf("devices = %+v, want new devices applied", s.Config.Devices)
+	}
+	if len(s.Config.Schedules) != 1 || s.Config.Schedules[0].Name != "NewBedtime" {
+		t.Errorf("schedules = %+v, want new schedules applied", s.Config.Schedules)
+	}
+	if rules := s.Engine.Rules(); len(rules) != 1 || rules[0].Pattern != "new.example.com" {
+		t.Errorf("engine rules = %+v, want new rules applied", rules)
 	}
 }

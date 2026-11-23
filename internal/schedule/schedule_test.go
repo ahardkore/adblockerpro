@@ -150,3 +150,23 @@ func TestParseDaysShorthand(t *testing.T) {
 		}
 	}
 }
+
+func TestSetAppliesEmptyModeDefault(t *testing.T) {
+	e := New()
+	// A schedule written without a mode must default to block-all, not be
+	// skipped as invalid.
+	err := e.Set([]Schedule{{ID: "1", Name: "All Day", Enabled: true, Start: "08:00", End: "18:00"}})
+	if err != nil {
+		t.Fatalf("empty mode should default to block-all: %v", err)
+	}
+	got := e.All()
+	if len(got) != 1 {
+		t.Fatalf("All = %+v, want one schedule", got)
+	}
+	if got[0].Mode != ModeBlockAll {
+		t.Errorf("mode = %q, want block-all", got[0].Mode)
+	}
+	if blocked, _ := e.Decision("", "anything.example", at(t, "2026-10-05 10:00")); !blocked {
+		t.Error("an empty-mode schedule should block while active")
+	}
+}
