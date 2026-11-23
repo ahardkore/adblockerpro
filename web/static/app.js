@@ -167,9 +167,11 @@
   /* ---------- query log ---------- */
 
   async function loadQueries() {
-    const search = encodeURIComponent($("#q-search").value.trim());
-    const status = $("#q-status").value;
-    const d = await api(`/api/queries?limit=250&search=${search}&status=${status}`);
+    const params = new URLSearchParams();
+    params.set("limit", "250");
+    params.set("search", $("#q-search").value.trim());
+    params.set("status", $("#q-status").value);
+    const d = await api("/api/queries?" + params.toString());
     const rows = (d.queries || []).map((q) => `
       <tr>
         <td class="muted">${clock(q.time)}</td>

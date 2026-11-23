@@ -472,6 +472,27 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Snapshot the live state, so a failed reload can undo everything below
+	// and leave the resolver exactly as it was.
+	data, err := json.Marshal(s.Config)
+	if err != nil {
+		badRequest(w, "could not snapshot live config: "+err.Error())
+		return
+	}
+	snapshot := &config.Config{}
+	if err := json.Unmarshal(data, snapshot); err != nil {
+		badRequest(w, "could not snapshot live config: "+err.Error())
+		return
+	}
+	var oldDHCPConfig dhcp.Config
+	if s.DHCP != nil {
+		oldDHCPConfig = s.DHCP.Config()
+	}
+	oldRetention := -1
+	if s.History != nil {
+		oldRetention = s.History.Retention()
+	}
+
 	s.Config.DNS = incoming.DNS
 	s.Config.Lists = incoming.Lists
 	s.Config.Rules = incoming.Rules
@@ -497,6 +518,30 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Reload != nil {
 		if err := s.Reload(s.Config); err != nil {
+			// Undo the live-state mutations and re-apply the previous
+			// config — a failed reload must not leave the resolver
+			// half-restored.
+			s.Config.DNS = snapshot.DNS
+			s.Config.Lists = snapshot.Lists
+			s.Config.Rules = snapshot.Rules
+			s.Config.Devices = snapshot.Devices
+			s.Config.Schedules = snapshot.Schedules
+			s.Config.DHCP = snapshot.DHCP
+			s.Config.Log = snapshot.Log
+			s.Config.History = snapshot.History
+			s.Engine.SetRules(s.Config.Rules)
+			s.Devices.Set(s.Config.Devices)
+			s.Schedules.Set(s.Config.Schedules)
+			s.Updater.SetSources(s.Config.Lists.Sources)
+			if s.DHCP != nil {
+				s.DHCP.SetConfig(oldDHCPConfig)
+			}
+			if s.History != nil && s.History.Retention() != oldRetention {
+				s.History.SetRetention(oldRetention)
+			}
+			if rerr := s.Reload(s.Config); rerr != nil {
+				s.Log.Warn("restoring previous config after failed reload", "err", rerr)
+			}
 			badRequest(w, err.Error())
 			return
 		}
