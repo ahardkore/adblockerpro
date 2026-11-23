@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ahardkore/adblockerpro/internal/blocklist"
 	"github.com/ahardkore/adblockerpro/internal/config"
 	"github.com/ahardkore/adblockerpro/internal/dhcp"
 	"github.com/ahardkore/adblockerpro/internal/dnsmsg"
@@ -133,9 +132,7 @@ func (s *Server) handleSchedules(w http.ResponseWriter, r *http.Request) {
 			badRequest(w, "invalid body")
 			return
 		}
-		if sc.Mode == "" {
-			sc.Mode = schedule.ModeBlockAll
-		}
+		sc = schedule.Normalize(sc)
 		if err := schedule.Validate(sc); err != nil {
 			badRequest(w, err.Error())
 			return
@@ -414,23 +411,20 @@ func (s *Server) handleMetrics(w http.ResponseWriter, r *http.Request) {
 // backupDocument is the Teleporter equivalent: everything needed to rebuild
 // this box, in one JSON file.
 type backupDocument struct {
-	Version   string              `json:"version"`
-	Exported  time.Time           `json:"exported"`
-	Config    *config.Config      `json:"config"`
-	Rules     []blocklist.Rule    `json:"rules"`
-	Schedules []schedule.Schedule `json:"schedules"`
-	Devices   []config.Device     `json:"devices"`
-	Leases    []dhcp.Lease        `json:"dhcp_leases,omitempty"`
+	Version  string         `json:"version"`
+	Exported time.Time      `json:"exported"`
+	Config   *config.Config `json:"config"`
+	// Leases are informational: a restore on a rebuilt box keeps the
+	// address assignments alive, but the live DHCP server is rebuilt from
+	// the pool configuration, not from this list.
+	Leases []dhcp.Lease `json:"dhcp_leases,omitempty"`
 }
 
 func (s *Server) handleBackup(w http.ResponseWriter, r *http.Request) {
 	doc := backupDocument{
-		Version:   Version,
-		Exported:  time.Now(),
-		Config:    s.Config,
-		Rules:     s.Engine.Rules(),
-		Schedules: s.Schedules.All(),
-		Devices:   s.Config.Devices,
+		Version:  Version,
+		Exported: time.Now(),
+		Config:   s.Config,
 	}
 	if s.DHCP != nil {
 		doc.Leases = s.DHCP.Leases()
@@ -460,6 +454,9 @@ func (s *Server) handleRestore(w http.ResponseWriter, r *http.Request) {
 	incoming.DNS.Listen, incoming.DNS.Port = s.Config.DNS.Listen, s.Config.DNS.Port
 	incoming.Web = s.Config.Web
 	incoming.DataDir = s.Config.DataDir
+	for i := range incoming.Schedules {
+		incoming.Schedules[i] = schedule.Normalize(incoming.Schedules[i])
+	}
 	if err := incoming.Validate(); err != nil {
 		badRequest(w, err.Error())
 		return

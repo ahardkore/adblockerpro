@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ahardkore/adblockerpro/internal/schedule"
 )
 
 func TestDefaultsAreValid(t *testing.T) {
@@ -182,9 +184,15 @@ func TestSessionTTLDefaults(t *testing.T) {
 func TestApplyDefaultsFillsMissingValues(t *testing.T) {
 	// A user config with only a few keys should still produce a valid box.
 	c := &Config{path: filepath.Join(t.TempDir(), "config.json")}
+	// Schedules written by hand without a mode get the default the API
+	// applies — they must not fail validation on load.
+	c.Schedules = []schedule.Schedule{{Name: "Hand-edited", Enabled: true, Start: "22:00", End: "07:00"}}
 	c.applyDefaults()
 	if err := c.Validate(); err != nil {
 		t.Errorf("applyDefaults produced a config that fails validation: %v", err)
+	}
+	if got := c.Schedules[0].Mode; got != schedule.ModeBlockAll {
+		t.Errorf("schedule mode = %q, want block-all", got)
 	}
 }
 

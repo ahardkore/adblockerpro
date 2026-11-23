@@ -319,6 +319,9 @@ func (c *Config) applyDefaults() {
 			c.Lists.Sources[i].ID = blocklist.SourceID(c.Lists.Sources[i].URL)
 		}
 	}
+	for i := range c.Schedules {
+		c.Schedules[i] = schedule.Normalize(c.Schedules[i])
+	}
 }
 
 // Validate checks the values that would otherwise fail at runtime.
