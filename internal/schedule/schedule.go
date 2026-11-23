@@ -114,6 +114,16 @@ func parseDays(days []string) map[time.Weekday]bool {
 	return out
 }
 
+// Normalize fills in the defaults a hand-written schedule is allowed to
+// leave out — an empty mode means block-all, the same default the API and
+// the engine apply.
+func Normalize(s Schedule) Schedule {
+	if s.Mode == "" {
+		s.Mode = ModeBlockAll
+	}
+	return s
+}
+
 // Validate checks a schedule before it is stored.
 func Validate(s Schedule) error {
 	if strings.TrimSpace(s.Name) == "" {
@@ -143,12 +153,10 @@ func (e *Engine) Set(schedules []Schedule) error {
 	list := make([]compiled, 0, len(schedules))
 	var skipped []string
 	for _, s := range schedules {
-		// The empty-mode default must happen before validation, or a
-		// schedule with no mode would be rejected by it and silently
-		// skipped instead of applied as block-all.
-		if s.Mode == "" {
-			s.Mode = ModeBlockAll
-		}
+		// Normalize before validating, or a schedule with no mode would
+		// be rejected by it and silently skipped instead of applied as
+		// block-all.
+		s = Normalize(s)
 		start, err := parseHHMM(s.Start)
 		if err != nil {
 			skipped = append(skipped, fmt.Sprintf("%s: %v", s.Name, err))
